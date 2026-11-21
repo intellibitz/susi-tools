@@ -1,20 +1,21 @@
 # susi-tools
 
-Development tooling for the Susi AI OS ecosystem. Apache-2.0.
+Susi Tools: the development tooling of the Susi AI OS ecosystem. Apache-2.0.
 
-Susi is built from three repositories that move together:
+Susi is the AI OS product: the private, licensed Susi Commercial Apps. It is the
+primary. Two public derivatives come from it, both Apache-2.0, and the three
+move together:
 
-- **susi**: the Apache-2.0 core, a local-first AI OS socket.
-- **susi-tools** (this repository): everything used only while developing,
+- **Susi Core**: the local-first AI OS socket.
+- **Susi Tools** (this repository): everything used only while developing,
   testing and releasing Susi. Nothing here ships inside a production program.
-- **Susi Commercial Apps**: the licensed products built on the core.
 
 ## Rules of this repository
 
 - **Apache-2.0, and nothing secret.** No credentials, keys, licence material or
   private records, in any file or in the history.
-- **It stands on the Susi core alone.** It never depends on Susi Commercial
-  Apps, so anyone can build it.
+- **It stands on Susi Core alone.** It never depends on the private product, so
+  anyone can build it.
 - **Development code and production code stay apart.** A production program
   never contains development tooling; the tooling lives here.
 - **No dependency on a hosting service.** Git is the only transport. Hosted
