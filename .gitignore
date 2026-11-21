@@ -1,0 +1,19 @@
+# Build output
+/target/
+**/target/
+
+# Local state, never tracked
+/.susi/
+*.log
+
+# Secrets never belong here, tracked or not
+.env
+.env.*
+*.key
+*.pem
+*.kdbx
+.secrets/
+
+# Editor metadata
+.idea/
+.vscode/
