@@ -333,12 +333,20 @@ pub fn close(repo: &Repo, id: &str) -> Result<String, String> {
     let record = json::parse(&text).map_err(|e| format!("{rel} is not JSON: {e}"))?;
     let cmd = accept_cmd(&record);
     safe_accept(&cmd)?;
-    eprintln!("susi-tools: running {id}'s acceptance: {}", cmd.join(" "));
-    let status = std::process::Command::new(&cmd[0])
-        .args(&cmd[1..])
+    // A repository that builds only elsewhere (Susi Core, on Linux) names a wrapper that runs
+    // the acceptance there: SUSI_TOOLS_ACCEPT_VIA="<program> [args]", given the command after.
+    let via: Vec<String> = std::env::var("SUSI_TOOLS_ACCEPT_VIA")
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
+    let full: Vec<String> = via.iter().chain(cmd.iter()).cloned().collect();
+    eprintln!("susi-tools: running {id}'s acceptance: {}", full.join(" "));
+    let status = std::process::Command::new(&full[0])
+        .args(&full[1..])
         .current_dir(&work)
         .status()
-        .map_err(|e| format!("cannot run {}: {e}", cmd[0]))?;
+        .map_err(|e| format!("cannot run {}: {e}", full[0]))?;
     if !status.success() {
         return Err(format!(
             "{id} is not done: its acceptance `{}` exited {}",
