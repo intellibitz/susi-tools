@@ -14,7 +14,6 @@ mod git_program;
 mod harvest;
 mod home;
 mod json;
-mod release;
 mod sha256;
 mod ship;
 mod tasks;
@@ -48,12 +47,6 @@ Harvested code
   susi-tools harvest audit [--range <A..B>] [--json]
                                  check the harvest ledger against Git: manifests, notices,
                                  retired records and the Harvest: citations of the range
-Releases of Susi Core (on an x86_64 Linux host, in a clean checkout of main)
-  susi-tools release check [vX.Y.Z]                  every check before the gates; changes nothing
-  susi-tools release qualify [vX.Y.Z] --task <id> [--sign]
-                                 run the gates and a smoke run of the built program, tag the
-                                 commit and commit its records; publishes nothing
-  susi-tools release publish vX.Y.Z    push the records to main and the tag, atomically
 The session start
   susi-tools workflow check      fast-forward a clean checkout, show what is addressed to you,
                                  say what you hold
@@ -70,9 +63,8 @@ Every command also takes:
 What each writes: board post creates one numbered item; claim, renew and release change your
 claim refs in one atomic push; add writes the new task's record into the checkout for you to
 commit; close runs the task's acceptance and, only if it passes, commits the record's removal;
-ship pushes your committed work to main as a fast-forward and posts Landed; release qualify writes
-a local tag and a commit of its records, and release publish pushes them and posts Landed. list
-and release check write nothing.
+ship pushes your committed work to main as a fast-forward and posts Landed. list writes
+nothing.
 ";
 
 fn main() -> ExitCode {
@@ -123,7 +115,6 @@ struct Options {
     deps: Vec<String>,
     scopes: Vec<String>,
     hours: Option<i64>,
-    sign: bool,
 }
 
 fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
@@ -140,10 +131,6 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
         }
         if name == "--json" {
             o.json = true;
-            continue;
-        }
-        if name == "--sign" {
-            o.sign = true;
             continue;
         }
         let value = it
@@ -593,94 +580,6 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 "closed {id} in {}: ship it to publish (`susi-tools ship`)",
                 &commit[..commit.len().min(12)]
             );
-            Ok(())
-        }
-        ["release", "check", ..] => {
-            let o = parse(rest, &[])?;
-            let repo = o.repo()?;
-            let tag = o.positional.first().map(String::as_str);
-            let plan = release::plan(&repo, &o.remote(), tag)?;
-            println!(
-                "{} can be cut from {} (tree {}), toolchain {}, on {}",
-                plan.tag,
-                &plan.commit[..12],
-                &plan.tree[..12],
-                plan.channel,
-                release::LINUX
-            );
-            for gate in release::gates() {
-                println!("  gate {}: {}", gate.name, gate.argv.join(" "));
-            }
-            println!("  then a smoke run of the built program from a private home");
-            Ok(())
-        }
-        ["release", "qualify", ..] => {
-            let o = parse(rest, &["--task", "--sign"])?;
-            let repo = o.repo()?;
-            let task = o.task.clone().ok_or_else(|| {
-                Failure::Usage("--task <id> is required: the records' commit names its task".into())
-            })?;
-            let tag = o.positional.first().map(String::as_str);
-            let done = release::qualify(&repo, &o.remote(), tag, &task, o.sign)?;
-            println!(
-                "qualified {} on {} in {} s: {} tests passed across {} binaries, {} failed, {} skipped",
-                done.tag,
-                &done.commit[..12],
-                done.seconds,
-                done.tests.passed,
-                done.tests.binaries,
-                done.tests.failed,
-                done.tests.skipped
-            );
-            println!(
-                "tagged {} on {} (which adds only its qualification record) and committed its release record as {}; nothing is published yet",
-                done.tag,
-                &done.tag_commit[..12],
-                &done.records_commit[..12]
-            );
-            println!("next: susi-tools release publish {}", done.tag);
-            Ok(())
-        }
-        ["release", "publish", ..] => {
-            let o = parse(rest, &[])?;
-            let repo = o.repo()?;
-            let agent = agent::name(o.agent.as_deref(), &repo)?;
-            let tag = match o.positional.as_slice() {
-                [tag] => tag.clone(),
-                _ => {
-                    return Err(Failure::Usage(
-                        "release publish takes the tag, vX.Y.Z".into(),
-                    ))
-                }
-            };
-            let remote = o.remote();
-            let (from, to, tagged) = release::publish(&repo, &remote, &tag)?;
-            println!(
-                "published {tag} ({}) and its records: {remote}'s main is {} (was {})",
-                &tagged[..12],
-                &to[..12],
-                &from[..12]
-            );
-            let title = format!("Released Susi Core {tag}");
-            let body = format!("tag={tag} commit={tagged} main={to}");
-            let posted = o.board(&repo).and_then(|board| {
-                post_line(
-                    &board,
-                    "origin",
-                    &board::Post {
-                        kind: "landed",
-                        agent: &agent,
-                        title: &title,
-                        body: &body,
-                        to: None,
-                        re: None,
-                        task: None,
-                    },
-                )
-            });
-            if let Err(Failure::Usage(why) | Failure::Run(why)) = posted {
-                eprintln!("susi-tools: {tag} is published, but the Board post failed: {why}");
-            }
             Ok(())
         }
         ["ship", ..] => {

@@ -8,15 +8,18 @@ repository kept a copy.
 
 | Name | Repository | What it is | Licence | Public |
 |---|---|---|---|---|
-| **Susi** | `susi` | The product: licensed commercial applications. It is the primary; the other two derive from it. | Proprietary | No |
-| **Susi Core** | `susi-core` | The local-first AI OS socket and its three pillars: GAWD (agent coordination, A2A, ACP and a parallel harness), GEMI (inference routing) and GMCP (MCP and governed tools). Linux x86_64. | Apache-2.0 | Yes |
+| **Susi** | `susi` | The product: secure autonomy for a company's AI agents (the agent vault first, then the harness), sold under licence. It is the primary; the other two derive from it. | Proprietary | No |
+| **Susi Core** | `susi-core` | The small libraries Susi builds on, and nothing else: home and path resolution, a typed error, and the wrappers of serde, serde_json, sha2 and getrandom. No program. | Apache-2.0 | Yes |
 | **Susi Tools** | `susi-tools` | Everything used only while developing, testing and releasing Susi. None of it ships inside a production program. | Apache-2.0 | Yes |
 
 ## How they relate
 
 - **One direction.** Dependencies flow only from Susi to Susi Core and Susi
   Tools. Neither public repository needs the product, and neither needs the
-  other: Susi is built with Susi Tools and may run on Susi Core.
+  other: Susi is built with Susi Tools and builds on Susi Core's libraries.
+- **Everything traces to Susi** (decided 2026-11-22). Susi's features are what
+  is sold; Susi Core holds only what those features use, and Susi Tools only
+  what agents use to build Susi. What traces to nothing is removed.
 - **Nothing secret in public.** Susi Core and Susi Tools carry no credential,
   key, licence material, private record or proprietary source, in any file or
   in their history.
@@ -42,43 +45,33 @@ Finished:
   called `susi-commercial-apps`; older text uses those names. Susi Core's old
   public address, `github.com/intellibitz/susi`, now belongs to Susi's private
   backup and no longer leads to Susi Core: use `intellibitz/susi-core`.
-- Susi Core builds and passes its tests offline on Linux. It has no line
-  limit: its size is measured and reported.
-- The offline proof passes: with every proxy dead and Git limited to local
-  files, all three repositories clone from the local server, Susi builds,
-  passes its tests and makes and rolls back a test release, Susi Core passes
-  its Linux checks, the transfer between Windows and CachyOS goes round
-  without changing anything, and the backup sync fails cleanly.
+- Susi Core is libraries only. Its program (an MCP server and a local daemon)
+  left on 2026-11-22 because no feature of Susi used it; its last release,
+  v0.21.72, stays published. With it went Susi Tools' release command, which
+  cut Core's releases.
+- Development moved to Linux. The laptop that holds the source of truth boots
+  Windows, CachyOS and openSUSE Tumbleweed; both Linux systems run their own
+  copy of the source of truth and the development program, and move work
+  between them through the shared drive. On Linux an agent's loop is
+  sub-second (session check, task start, commit, ship), Susi's whole suite
+  takes 6 to 7 seconds, Susi Core's gates about 3 and Susi Tools' suite under 1.
 
 Not finished, said plainly:
 
-- **The program names.** Susi Core's program is still called `susi` and
-  Susi's is still called `susi-commercial`; they are renamed in a second step.
-- **Susi Core does not run on its own yet.** Its program lists 61 commands;
-  all but `help` and `install` hand the work to a runtime that was part of
-  Susi and was removed on 2026-11-22. A small runtime that starts on its own is
-  being built, and the commands that do nothing go.
+- **The program names.** Susi's program is still called `susi-commercial`;
+  it becomes `susi` in a later step. Susi Core's root package keeps the name
+  `susi` and holds no program.
 - **Susi is being rebuilt.** Since 2026-11-22 Susi holds only its licence and
-  vault core. Its applications are being rebuilt, so a capability Susi Core
-  points to the product for has no implementation there today.
-- **Susi Tools is being filled.** Since 2026-11-22 it holds a speed report, a
-  runner for a checkout's suite on Linux, and the rebuilt development program,
-  installed on the Windows host, which hands every command it does not have yet
-  to the earlier one, still built from source kept privately; its README lists
-  what it holds. Susi Core's development-only code (`scripts/`, `toolchain/`,
-  `fuzz/`) moves there piece by piece.
-- **Speed.** Since 2026-11-22 nothing an agent waits on may take more than 10
-  seconds, warm. Susi Tools' suite meets it on Linux, where it runs before every
-  ship (about 5 s from Windows through WSL2); on Windows it takes about 40 s.
-  Not met yet: Susi's whole test suite and its optimised build take longer.
-  Each is measured, dated and its fix recorded in the repository it belongs to.
-- **The latest compiler.** Rust 1.100.0 is installed but Susi and Susi Core do
-  not use it yet: two low-level parts (Susi's Windows start-up code and Susi
-  Core's standard-library builder) are checked only against Rust 1.99.0 and
-  must be re-checked before the compiler moves. Susi Tools names no compiler
-  version: on the Windows host it builds with 1.100.0, in WSL2 with 1.99.0, and
-  both pass its lint since 2026-11-22.
-- **CachyOS.** The Linux side of the dual-boot setup needs the new sync script
-  run there once, by hand; it then renames the old layout to the new names and
-  imports. Until then the old script there stops at the new format without
-  changing anything. Tested in a Linux copy, not yet on the real host.
+  vault core, and builds the agent vault into a product another company can
+  install.
+- **Susi Tools is being filled.** It holds the development program, which hands
+  every command it does not have yet to the earlier one, still built from
+  source kept privately; on Linux, where that earlier program is not installed,
+  four checks the Git hooks ask for do not run yet. It also holds a speed report
+  and a runner for a checkout's suite on Linux. Susi Core's development-only
+  code (`scripts/` and its Git hooks) moves here piece by piece.
+- **Speed.** Nothing an agent waits on may take more than 10 seconds, warm.
+  Over the line today: Susi's optimised release build (about 20 s on Linux).
+- **The latest compiler.** Susi and Susi Core use Rust 1.99.0; Susi's Windows
+  start-up code is checked only against it and must be re-checked before the
+  compiler moves. Susi Tools names no compiler version.

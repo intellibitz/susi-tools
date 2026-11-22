@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! SHA-256 (FIPS 180-4), written here so the program keeps no dependency. Release records carry
-//! the digests of the built program, the lockfile and every gate's log.
-
-use std::io::Read;
-use std::path::Path;
+//! SHA-256 (FIPS 180-4), written here so the program keeps no dependency. The harvest audit
+//! compares harvested files with the digests their manifests record.
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -111,26 +108,6 @@ pub fn of(bytes: &[u8]) -> String {
     let mut hash = Sha256::new();
     hash.update(bytes);
     hash.hex()
-}
-
-/// The digest of a file and its length, read in pieces.
-pub fn of_file(path: &Path) -> Result<(String, u64), String> {
-    let mut file =
-        std::fs::File::open(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let mut hash = Sha256::new();
-    let mut buffer = vec![0u8; 1 << 16];
-    let mut total = 0u64;
-    loop {
-        let n = file
-            .read(&mut buffer)
-            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        if n == 0 {
-            break;
-        }
-        total += n as u64;
-        hash.update(&buffer[..n]);
-    }
-    Ok((hash.hex(), total))
 }
 
 #[cfg(test)]

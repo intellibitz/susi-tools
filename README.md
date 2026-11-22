@@ -53,25 +53,9 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     commit, ship and claim in one command, and `tasks finish` does close and
     ship, in the same formats. The earlier program's
     spellings `workflow board …` and `workflow ship` work too.
-  - **Releases of Susi Core:** `release check | qualify | publish`, on an
-    x86_64 Linux host in a clean checkout of Core's `main`. `qualify` runs
-    Core's checks (formatting, Clippy, licences with cargo-deny, the whole
-    suite with cargo-nextest, doc-tests, the distribution build), then a smoke
-    run of the built program from a private home (`--version`, an MCP session
-    over standard input and output, the daemon's health, token check and
-    stop). Only when all of it passes does it commit
-    `releases/qualification/<tag>.json` alone on top of the qualified commit,
-    tag that commit (annotated; `--sign` signs it), as the release-tag check
-    of Core's pre-push hook requires, and commit `releases/<tag>.json`, which
-    names the tagged commit, in Core's formats; it publishes nothing. `publish` pushes that commit to `main` and the tag in one atomic
-    push, and refuses a version already published. Proven on 2026-11-22 on a
-    scratch copy of Core with a scratch origin: `qualify` took 12 s warm,
-    Core's own record tests accepted the records, and Core's `install.sh`
-    rebuilt the release from the scratch origin with a matching checksum. On
-    2026-11-22 it cut Susi Core v0.21.72, the first release of the rebuilt
-    program: every gate and the smoke run passed (380 tests), the tag was signed on
-    the Windows host (qualify ran in WSL2) and published with its records, and a
-    cold install from the canonical server matched the reference checksum.
+  - **No release command since 2026-11-22.** It cut Susi Core's releases
+    (v0.21.72 was its first and last), and Susi Core has had no program and cut
+    no releases since that day; it left with them, and history keeps it.
   - **The harvest audit:** `susi-tools harvest audit [--range <A..B>] [--json]`,
     and the same as `local-harvest audit` through a second program,
     `local-harvest`, which Susi's release gate calls by that name. The same
