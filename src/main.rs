@@ -10,6 +10,7 @@ mod board;
 mod check;
 mod claims;
 mod git;
+mod home;
 mod json;
 mod ship;
 mod tasks;
@@ -155,6 +156,18 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
 }
 
 impl Options {
+    fn path(&self) -> PathBuf {
+        self.repo
+            .clone()
+            .or_else(|| std::env::var_os("SUSI_TOOLS_REPO").map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// The repository that holds the Board (Susi's), for work in `repo`.
+    fn board(&self, repo: &git::Repo) -> Result<git::Repo, Failure> {
+        Ok(home::board_repo(repo, &self.path())?)
+    }
+
     fn repo(&self) -> Result<git::Repo, Failure> {
         let path = self
             .repo
@@ -263,7 +276,13 @@ fn run(args: &[String]) -> Result<(), Failure> {
         ["board", "list", ..] => {
             let o = parse(rest, &["--limit", "--json"])?;
             let repo = o.repo()?;
-            let (items, last) = board::latest(&repo, o.limit.unwrap_or(20))?;
+            let limit = o.limit.unwrap_or(20);
+            let (items, last) = if o.repo.is_some() || std::env::var_os("SUSI_TOOLS_REPO").is_some()
+            {
+                board::latest(&repo, limit)?
+            } else {
+                check::recent_items(&o.board(&repo)?, "origin", limit)?
+            };
             if o.json {
                 println!("{}", board::to_json(&items).to_pretty());
             } else {
@@ -278,13 +297,14 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let o = parse(rest, &[])?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
-            Ok(check::board_check(&repo, &o.remote(), &agent)?)
+            Ok(check::board_check(&o.board(&repo)?, "origin", &agent)?)
         }
         ["workflow", "check", ..] => {
             let o = parse(rest, &[])?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
-            Ok(check::workflow_check(&repo, &o.remote(), &agent)?)
+            let board = o.board(&repo)?;
+            Ok(check::workflow_check(&repo, &o.remote(), &board, &agent)?)
         }
         ["board", "post", ..] => {
             let o = parse(
@@ -311,8 +331,8 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 .clone()
                 .ok_or_else(|| Failure::Usage("--title is required".into()))?;
             post_line(
-                &repo,
-                &o.remote(),
+                &o.board(&repo)?,
+                "origin",
                 &board::Post {
                     kind: &kind,
                     agent: &agent,
@@ -404,7 +424,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 "{} claimed {} until unix {}",
                 claim.agent, claim.task, claim.lease_until_unix
             );
-            claim_post(&repo, &remote, &claim)
+            claim_post(&o.board(&repo)?, "origin", &claim)
         }
         ["tasks", "renew", ..] => {
             let o = parse(rest, &["--hours"])?;
@@ -432,7 +452,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let remote = o.remote();
             if claims::release(&repo, &remote, &id, &agent)? {
                 println!("released {id}");
-                release_post(&repo, &remote, &id, &agent::token(&agent)?)
+                release_post(&o.board(&repo)?, "origin", &id, &agent::token(&agent)?)
             } else {
                 println!("{id} has no claim to release");
                 Ok(())
@@ -477,9 +497,10 @@ fn run(args: &[String]) -> Result<(), Failure> {
                     if !shipped.is_empty() {
                         body.push_str(&format!("\nTasks: {}", shipped.join(", ")));
                     }
+                    let board = o.board(&repo)?;
                     post_line(
-                        &repo,
-                        &remote,
+                        &board,
+                        "origin",
                         &board::Post {
                             kind: "landed",
                             agent: &agent,
@@ -490,7 +511,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                             task: shipped.first().map(String::as_str),
                         },
                     )?;
-                    after_ship(&repo, &remote, &agent)
+                    after_ship(&repo, &remote, &board, &agent)
                 }
             }
         }
@@ -541,7 +562,12 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
 }
 
 /// Landing work keeps a claim alive; a claim on a task this ship closed is released (Mandate 85).
-fn after_ship(repo: &git::Repo, remote: &str, agent: &str) -> Result<(), Failure> {
+fn after_ship(
+    repo: &git::Repo,
+    remote: &str,
+    board: &git::Repo,
+    agent: &str,
+) -> Result<(), Failure> {
     let token = agent::token(agent)?;
     let state = claims::State::read(repo, remote)?;
     let Some((_, _, mine)) = state
@@ -569,7 +595,7 @@ fn after_ship(repo: &git::Repo, remote: &str, agent: &str) -> Result<(), Failure
         let task = mine.task.clone();
         if claims::release(repo, remote, &task, agent)? {
             println!("{task} is closed on main: its claim is released");
-            release_post(repo, remote, &task, &token)?;
+            release_post(board, "origin", &task, &token)?;
         }
         Ok(())
     }

@@ -10,7 +10,11 @@ const BOARD_SNAPSHOT: &str = "refs/susi-tools/remote/board/";
 const LOOK_BACK: usize = 60;
 
 /// The newest `LOOK_BACK` items of the remote's Board, oldest first, fetched by name only.
-pub fn recent_items(repo: &Repo, remote: &str) -> Result<(Vec<board::Item>, u64), String> {
+pub fn recent_items(
+    repo: &Repo,
+    remote: &str,
+    limit: usize,
+) -> Result<(Vec<board::Item>, u64), String> {
     let mut numbered: Vec<(u64, String)> = repo
         .remote_refs(remote, &["refs/board/items/*"])?
         .into_iter()
@@ -22,7 +26,7 @@ pub fn recent_items(repo: &Repo, remote: &str) -> Result<(Vec<board::Item>, u64)
         .collect();
     numbered.sort_by_key(|(n, _)| *n);
     let last = numbered.last().map_or(0, |(n, _)| *n);
-    let chosen = &numbered[numbered.len().saturating_sub(LOOK_BACK)..];
+    let chosen = &numbered[numbered.len().saturating_sub(limit)..];
     if chosen.is_empty() {
         return Ok((Vec::new(), 0));
     }
@@ -79,7 +83,7 @@ pub fn addressed<'a>(items: &'a [board::Item], agent: &str) -> Vec<&'a board::It
         .collect()
 }
 pub fn board_check(repo: &Repo, remote: &str, agent: &str) -> Result<(), String> {
-    let (items, last) = recent_items(repo, remote)?;
+    let (items, last) = recent_items(repo, remote, LOOK_BACK)?;
     println!("board on `{remote}`: last item is {last}; you are `{agent}`");
     let waiting = addressed(&items, agent);
     if waiting.is_empty() {
@@ -93,7 +97,7 @@ pub fn board_check(repo: &Repo, remote: &str, agent: &str) -> Result<(), String>
     Ok(())
 }
 
-pub fn workflow_check(repo: &Repo, remote: &str, agent: &str) -> Result<(), String> {
+pub fn workflow_check(repo: &Repo, remote: &str, board: &Repo, agent: &str) -> Result<(), String> {
     let main = crate::tasks::fetch_main(repo, remote)?;
     let head = repo.read(&["rev-parse", "HEAD"])?.trim().to_owned();
     let tip = repo.read(&["rev-parse", &main])?.trim().to_owned();
@@ -129,7 +133,7 @@ pub fn workflow_check(repo: &Repo, remote: &str, agent: &str) -> Result<(), Stri
     if ahead > 0 {
         println!("{ahead} commit(s) of yours are not on main yet: ship them (`susi-tools ship`)");
     }
-    board_check(repo, remote, agent)?;
+    board_check(board, "origin", agent)?;
     let state = crate::claims::State::read(repo, remote)?;
     let token = crate::agent::token(agent)?;
     let now = crate::time::now_unix();

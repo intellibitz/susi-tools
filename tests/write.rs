@@ -103,6 +103,7 @@ fn template() -> &'static Path {
         )
         .unwrap();
         std::fs::write(root.join("seed/README"), "seed\n").unwrap();
+        std::fs::write(root.join("seed/.susi-repo-role"), "private-commercial\n").unwrap();
         let seed = root.join("seed");
         git_in(&config, &seed, &["add", "-A"]);
         git_in(&config, &seed, &["commit", "-q", "-m", "seed"]);
@@ -689,4 +690,102 @@ fn the_session_check_fast_forwards_and_shows_what_is_addressed_to_you() {
         again.contains("nothing is waiting for your answer"),
         "{again}"
     );
+}
+
+#[test]
+fn work_in_a_public_repository_posts_to_the_agent_roots_susi_board() {
+    let fx = Fx::new("public");
+    let root = fx.root.join("agents/alpha");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join(".susi-agent-root"), "{\"agent\":\"alpha\"}\n").unwrap();
+    let susi = root.join("susi-commercial-apps");
+    fx.git(
+        &fx.root,
+        &[
+            "clone",
+            "-q",
+            "--template=",
+            fx.origin().to_str().unwrap(),
+            susi.to_str().unwrap(),
+        ],
+    );
+    let core_origin = fx.root.join("core.git");
+    fx.git(
+        &fx.root,
+        &[
+            "init",
+            "-q",
+            "--template=",
+            "--bare",
+            core_origin.to_str().unwrap(),
+        ],
+    );
+    let seed = fx.root.join("core-seed");
+    fx.git(
+        &fx.root,
+        &["init", "-q", "--template=", seed.to_str().unwrap()],
+    );
+    std::fs::create_dir_all(seed.join(".agents/tasks")).unwrap();
+    std::fs::write(seed.join(".susi-repo-role"), "public-core\n").unwrap();
+    std::fs::write(
+        seed.join(".agents/tasks/T-C-1.json"),
+        task_json("T-C-1", &[], &["cargo", "--version"]),
+    )
+    .unwrap();
+    fx.git(&seed, &["add", "-A"]);
+    fx.git(&seed, &["commit", "-q", "-m", "core seed"]);
+    fx.git(
+        &seed,
+        &[
+            "push",
+            "-q",
+            core_origin.to_str().unwrap(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    let core = root.join("core");
+    fx.git(
+        &fx.root,
+        &[
+            "clone",
+            "-q",
+            "--template=",
+            core_origin.to_str().unwrap(),
+            core.to_str().unwrap(),
+        ],
+    );
+
+    let out = Command::new(env!("CARGO_BIN_EXE_susi-tools"))
+        .current_dir(&core)
+        .env("GIT_CONFIG_GLOBAL", fx.root.join("gitconfig"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("SUSI_AGENT", "alpha")
+        .env_remove("SUSI_BOARD_REPO")
+        .env_remove("SUSI_TOOLS_REPO")
+        .args(["tasks", "claim", "T-C-1", "--scope", "src"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let claim = fx.try_git(
+        &core_origin,
+        &["rev-parse", "--verify", "--quiet", "refs/claims/T-C-1"],
+    );
+    assert!(
+        claim.is_some(),
+        "the claim belongs to the repository the task is in"
+    );
+    assert!(
+        fx.try_git(
+            &core_origin,
+            &["rev-parse", "--verify", "--quiet", "refs/board/items/1"]
+        )
+        .is_none(),
+        "a Board item reached the public repository"
+    );
+    let item = fx.origin_blob("refs/board/items/1");
+    assert!(item.contains("Claimed T-C-1"), "{item}");
 }
