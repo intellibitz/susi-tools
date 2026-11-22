@@ -58,7 +58,6 @@ impl Json {
     }
 
     /// Compact text, keys in their stored order.
-    #[cfg(test)]
     pub fn to_compact(&self) -> String {
         let mut out = String::new();
         write_value(&mut out, self, None, 0);

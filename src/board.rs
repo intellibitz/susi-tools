@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The Susi Board, read only: numbered, create-only items stored as JSON blobs under
-//! `refs/board/items/<n>` (schema `susi-board-item-v1`).
+//! The Susi Board: numbered, create-only items stored as JSON blobs under
+//! `refs/board/items/<n>` (schema `susi-board-item-v1`), each naming the item before it.
 
-use crate::git::Repo;
+use crate::git::{PushOutcome, Repo, Update};
 use crate::json::{self, Json};
 
 pub const ITEMS: &str = "refs/board/items/";
 pub const SCHEMA: &str = "susi-board-item-v1";
+/// The kinds agents post (Mandate 76 and the Board's own history).
+pub const KINDS: [&str; 10] = [
+    "claim", "landed", "cut", "heads-up", "request", "answer", "handoff", "decision", "blocked",
+    "note",
+];
 
 pub struct Item {
     pub n: u64,
@@ -14,10 +19,8 @@ pub struct Item {
     pub body: Json,
 }
 
-/// The newest `limit` items, oldest first, the way the Board is read.
-pub fn latest(repo: &Repo, limit: usize) -> Result<(Vec<Item>, u64), String> {
-    let mut numbered: Vec<(u64, String)> = repo
-        .refs(ITEMS)?
+fn numbered(pairs: Vec<(String, String)>) -> Vec<(u64, String)> {
+    let mut numbered: Vec<(u64, String)> = pairs
         .into_iter()
         .filter_map(|(name, oid)| {
             name.strip_prefix(ITEMS)
@@ -26,6 +29,12 @@ pub fn latest(repo: &Repo, limit: usize) -> Result<(Vec<Item>, u64), String> {
         })
         .collect();
     numbered.sort_by_key(|(n, _)| *n);
+    numbered
+}
+
+/// The newest `limit` items, oldest first, the way the Board is read.
+pub fn latest(repo: &Repo, limit: usize) -> Result<(Vec<Item>, u64), String> {
+    let numbered = numbered(repo.refs(ITEMS)?);
     let last = numbered.last().map_or(0, |(n, _)| *n);
     let start = numbered.len().saturating_sub(limit);
     let chosen = &numbered[start..];
@@ -97,4 +106,74 @@ pub fn to_json(items: &[Item]) -> Json {
                 .collect(),
         ),
     )])
+}
+
+pub struct Post<'a> {
+    pub kind: &'a str,
+    pub agent: &'a str,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub to: Option<&'a str>,
+    pub re: Option<u64>,
+    pub task: Option<&'a str>,
+}
+
+/// The item's bytes, in the field order and layout every earlier item has.
+fn render(post: &Post<'_>, n: u64, prev: &str, host: &str, now: i64) -> Vec<u8> {
+    let mut fields = vec![
+        ("schema".to_owned(), Json::Str(SCHEMA.into())),
+        ("n".into(), Json::Number(n.to_string())),
+        ("kind".into(), Json::Str(post.kind.into())),
+        ("agent".into(), Json::Str(post.agent.into())),
+        ("host".into(), Json::Str(host.into())),
+        ("posted_unix".into(), Json::Number(now.to_string())),
+        ("title".into(), Json::Str(post.title.into())),
+        ("body".into(), Json::Str(post.body.into())),
+    ];
+    if let Some(to) = post.to {
+        fields.push(("to".into(), Json::Str(to.into())));
+    }
+    if let Some(re) = post.re {
+        fields.push(("re".into(), Json::Number(re.to_string())));
+    }
+    fields.push(("task".into(), Json::Str(post.task.unwrap_or("").into())));
+    fields.push(("prev".into(), Json::Str(prev.into())));
+    let mut text = Json::Object(fields).to_pretty();
+    text.push('\n');
+    text.into_bytes()
+}
+
+/// Post one item on `remote`'s Board: the next free number, naming the item before it. Two
+/// posters never share a number: the push only creates a ref that does not exist yet, and a
+/// poster that loses the race reads the Board again and takes the next number.
+pub fn post(repo: &Repo, remote: &str, post: &Post<'_>) -> Result<(u64, String), String> {
+    if !KINDS.contains(&post.kind) {
+        return Err(format!("kind must be one of {}", KINDS.join(", ")));
+    }
+    if post.title.trim().is_empty() || post.title.contains('\n') {
+        return Err("a title is one non-empty line".into());
+    }
+    let host = crate::agent::host();
+    for attempt in 0..12u32 {
+        let board = numbered(repo.remote_refs(remote, &["refs/board/items/*"])?);
+        let (n, prev) = board
+            .last()
+            .map_or((1, String::new()), |(n, oid)| (n + 1, oid.clone()));
+        let bytes = render(post, n, &prev, &host, crate::time::now_unix());
+        let oid = repo.write_blob(&bytes)?;
+        let update = Update {
+            refname: format!("{ITEMS}{n}"),
+            new: Some(oid.clone()),
+            expect: None,
+        };
+        match repo.push_atomic(remote, &[update])? {
+            PushOutcome::Done => return Ok((n, oid)),
+            PushOutcome::Stale => {
+                std::thread::sleep(std::time::Duration::from_millis(
+                    40 + u64::from(attempt) * 60 + u64::from(std::process::id() % 50),
+                ));
+            }
+        }
+    }
+    Err("the Board kept moving: twelve tries, each number taken first; nothing was posted".into())
 }

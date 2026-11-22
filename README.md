@@ -30,19 +30,41 @@ point to it.
 
 Founded on 2026-11-22 with a clean history. What it holds so far:
 
-- **`susi-tools` 0.1, the development program, rebuilt small** (`src/`). Its
-  first slice only reads: `susi-tools board list` and `susi-tools tasks list`
-  show the Susi Board and the task queue of any repository (`--repo`, a bare
-  repository, a checkout or a worktree). It uses nothing but the Rust standard
-  library and the `git` program, and it writes nothing, inside a checkout or
-  out (a test holds that). Checked on 2026-11-22 against the live Board and
-  both queues: the same items, tasks and claims as the earlier program, in 0.2
-  to 0.3 seconds where the earlier one took 1.4 to 23. Not yet: the commands
-  that write (claim, release, post, ship, start a worktree, close a task), so
-  it is not installed in place of the earlier program, whose source is still
-  kept privately. Build it with `cargo build --release --offline`; test it
-  with `cargo test --offline`.
-- [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
+- **`susi-tools` 0.2, the development program, rebuilt small** (`src/`). It uses
+  nothing but the Rust standard library and the `git` program, and it never
+  leaves a file of its own in a checkout: what it changes goes through Git.
+  - **Reads:** `board list`, `tasks list` (any repository, `--repo`).
+  - **Session start:** `workflow check` fast-forwards a clean checkout to the
+    remote's `main`, lists requests addressed to you that you have not
+    answered, and says what you hold; `board check` does the middle part.
+  - **Writes:** `board post` (the next free number, naming the item before;
+    two posters never share a number), `tasks claim | renew | release` (the
+    three claim refs in one atomic push, each guarded by the value it was read
+    at; refused when another agent holds the task, a live claim of another
+    agent covers a scope, you already hold another live claim, or a
+    dependency is still open), `tasks add` (a number never used before,
+    history included), `tasks close` (runs the acceptance and, only if it
+    passes, commits the record's removal) and `ship` (committed work only, a
+    fast-forward of `main`, then Landed on the Board; renews your claim, or
+    releases it when the ship closed its task). The earlier program's
+    spellings `workflow board …` and `workflow ship` work too.
+  - **Same formats as the earlier program**, so both read each other's work.
+    Checked on 2026-11-22 on Susi's live Board and queue: the earlier program
+    read this program's claim (holder, lease, scopes), listed its Board
+    items with no findings, and both refused a second claim by one agent.
+    Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
+    with its Board item 3 s, a ship 3 s.
+  - **Tests:** 25, on made-up repositories only. On Linux they take 0.7 s; on
+    Windows about 15 s, because Windows starts the many short `git`
+    processes slowly when the tests run side by side.
+  - **Not yet:** it is not installed in place of the earlier program. The
+    contracts still tell agents to run commands only the earlier program has
+    (among them `workflow vision`, `workflow prune`, `workflow start`,
+    `harvest`, `releases`); switching now would leave those instructions
+    pointing at nothing. The switch comes with the short contracts of the
+    foundation plan's phase 7. Until then, run it from where it is built.
+  - Build it with `cargo build --release --offline`; test it with
+    `cargo test --offline`.- [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
   everyday operations (build, the whole suite, lint, formatting, the optimised
   build and the development program's own commands) against the 10-second line
   the CEO set on 2026-11-22: "no more waiting more than 10s for anything - test,
