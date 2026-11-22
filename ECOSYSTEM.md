@@ -10,7 +10,7 @@ fingerprint, so the page changes in all three at once or not at all.
 |---|---|---|---|---|
 | **Susi** | `susi` | The product: licensed commercial applications. It is the primary; the other two derive from it. | Proprietary | No |
 | **Susi Core** | `susi-core` | The local-first AI OS socket and its three pillars: GAWD (agent coordination, A2A, ACP and a parallel harness), GEMI (inference routing) and GMCP (MCP and governed tools). Linux x86_64. | Apache-2.0 | Yes |
-| **Susi Tools** | `susi-tools` | Everything used only while developing, testing and releasing Susi. None of it ships inside a production program. | Apache-2.0 | Not yet |
+| **Susi Tools** | `susi-tools` | Everything used only while developing, testing and releasing Susi. None of it ships inside a production program. | Apache-2.0 | Yes |
 
 ## How they relate
 
@@ -24,7 +24,10 @@ fingerprint, so the page changes in all three at once or not at all.
 - **One source of truth.** Each repository lives on a local Git server. GitHub
   and GitLab hold write-only backup copies, refreshed every ten minutes;
   nothing is ever fetched from them. The public copies of Susi Core are at
-  `github.com/intellibitz/susi-core` and `gitlab.com/intellibitz/susi-core`.
+  `github.com/intellibitz/susi-core` and `gitlab.com/intellibitz/susi-core`,
+  and those of Susi Tools (public since 2026-11-22) at
+  `github.com/intellibitz/susi-tools` and `gitlab.com/intellibitz/susi-tools`.
+  Public copies carry `main` and signed release tags only.
 - **Published one way.** No outside pull request, patch or commit is merged.
   Anyone may fork the public repositories under Apache-2.0, which grants rights
   to the code, not to the Susi name or marks.

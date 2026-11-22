@@ -38,8 +38,14 @@ Founded on 2026-11-22 with a clean history. It holds one tool so far:
 
 The development program `susi-tools` itself is still built from source kept
 privately, and it moves here piece by piece, each piece checked against the
-rules above before it lands. This repository is private on its backups until
-the CEO says publish.
+rules above before it lands.
+
+This repository is public since 2026-11-22: its write-only backups are at
+`github.com/intellibitz/susi-tools` and `gitlab.com/intellibitz/susi-tools`,
+`main` and signed release tags only. The repository of record is the local
+canonical Git server; nothing is fetched from the hosted copies, and no
+outside pull request, patch or commit is merged. Anyone may fork it under
+Apache-2.0, which grants rights to the code, not to the Susi name or marks.
 
 ## License
 
