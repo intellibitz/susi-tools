@@ -161,6 +161,11 @@ pub struct Request<'a> {
     pub scopes: &'a [String],
     pub hours: i64,
     pub branch: &'a str,
+    /// Where the task's record is, when it is not in this repository's own queue: Susi's
+    /// repository, which holds the ecosystem's queue and the Board. The claim itself is always
+    /// kept on this repository's `remote`, where the files it covers live, so a task of Susi's
+    /// queue can claim files in Susi Tools or Susi Core.
+    pub queue: Option<&'a Repo>,
 }
 
 /// Claim a task on `remote`. Refused, with nothing changed, when the task is not open on the
@@ -184,11 +189,25 @@ pub fn claim(repo: &Repo, remote: &str, req: &Request<'_>) -> Result<Claim, Stri
     }
     let now = crate::time::now_unix();
     let mut state = State::read(repo, remote)?;
-    let open = tasks::open_records(repo, tasks::MAIN_SNAPSHOT)?;
-    let task = open
-        .iter()
-        .find(|t| t.id == req.task)
-        .ok_or_else(|| format!("{} is not an open task on {remote}'s main", req.task))?;
+    let own = tasks::open_records(repo, tasks::MAIN_SNAPSHOT)?;
+    let open = match req.queue {
+        Some(queue) if !own.iter().any(|t| t.id == req.task) => {
+            tasks::fetch_main(queue, "origin")?;
+            let theirs = tasks::open_records(queue, tasks::MAIN_SNAPSHOT)?;
+            if theirs.iter().any(|t| t.id == req.task) {
+                theirs
+            } else {
+                own
+            }
+        }
+        _ => own,
+    };
+    let task = open.iter().find(|t| t.id == req.task).ok_or_else(|| {
+        format!(
+            "{} is not an open task on {remote}'s main, nor in Susi's queue",
+            req.task
+        )
+    })?;
     if let Some(dep) = task
         .record
         .str_list("deps")
@@ -324,7 +343,14 @@ pub fn release(repo: &Repo, remote: &str, task: &str, agent: &str) -> Result<boo
 }
 
 /// Extend this agent's live claim on `task` (or its only live claim) by `hours` from now.
-pub fn renew(repo: &Repo, remote: &str, agent: &str, hours: i64) -> Result<Option<Claim>, String> {
+/// `queue`: Susi's repository, for a claim here on a task of Susi's queue (see `Request`).
+pub fn renew(
+    repo: &Repo,
+    remote: &str,
+    agent: &str,
+    hours: i64,
+    queue: Option<&Repo>,
+) -> Result<Option<Claim>, String> {
     let token = crate::agent::token(agent)?;
     let state = State::read(repo, remote)?;
     let now = crate::time::now_unix();
@@ -337,6 +363,7 @@ pub fn renew(repo: &Repo, remote: &str, agent: &str, hours: i64) -> Result<Optio
         scopes: &mine.scopes,
         hours,
         branch: &mine.branch,
+        queue,
     };
     claim(repo, remote, &request).map(Some)
 }

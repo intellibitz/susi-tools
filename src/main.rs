@@ -13,6 +13,7 @@ mod git;
 mod git_program;
 mod harvest;
 mod home;
+mod hooks;
 mod json;
 mod sha256;
 mod ship;
@@ -50,6 +51,11 @@ Harvested code
 The session start
   susi-tools workflow check      fast-forward a clean checkout, show what is addressed to you,
                                  say what you hold
+The checks the Git hooks run (each refuses only what its rule names)
+  susi-tools workflow root show [dir] | root init --agent <name> [dir]
+  susi-tools workflow fresh       refuse a commit far behind the remote's main
+  susi-tools workflow reuse --message-file <file> | <task>
+  susi-tools workflow guard commit|merge
 
 The earlier program's spellings work too: workflow board list|post|check, workflow ship.
 Any other command goes to the earlier program, installed beside this one as susi-tools-legacy.
@@ -522,6 +528,8 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 .map(|b| b.trim().to_owned())
                 .unwrap_or_default();
             let remote = o.remote();
+            // A task of Susi's queue may claim files here (Susi Tools, Susi Core).
+            let queue = o.board(&repo).ok();
             let claim = claims::claim(
                 &repo,
                 &remote,
@@ -531,6 +539,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                     scopes: &o.scopes,
                     hours: o.hours.unwrap_or(claims::DEFAULT_HOURS),
                     branch: &branch,
+                    queue: queue.as_ref(),
                 },
             )?;
             println!(
@@ -543,11 +552,13 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let o = parse(rest, &["--hours"])?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
+            let queue = o.board(&repo).ok();
             match claims::renew(
                 &repo,
                 &o.remote(),
                 &agent,
                 o.hours.unwrap_or(claims::DEFAULT_HOURS),
+                queue.as_ref(),
             )? {
                 Some(c) => println!(
                     "{} holds {} until unix {}",
@@ -646,6 +657,11 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 Err(Failure::Run(report.text))
             }
         }
+        ["workflow", "root" | "fresh" | "reuse" | "guard", ..] => hooks::run_cli(&words[1..])
+            .map_err(|stop| match stop {
+                hooks::Stop::Usage(m) => Failure::Usage(m),
+                hooks::Stop::Refused(m) => Failure::Run(m),
+            }),
         _ => forward(args),
     }
 }
@@ -741,8 +757,15 @@ fn after_ship(
         tasks::TASKS_DIR,
         mine.task
     );
-    if repo.try_read(&["cat-file", "-e", &record]).is_some() {
-        let renewed = claims::renew(repo, remote, agent, claims::DEFAULT_HOURS)?;
+    // The task is open while its record is on main here, or, for a task of Susi's queue claimed
+    // in Susi Tools or Susi Core, on Susi's main.
+    let open_here = repo.try_read(&["cat-file", "-e", &record]).is_some();
+    let open_in_queue = !open_here
+        && board.git_dir() != repo.git_dir()
+        && tasks::fetch_main(board, "origin").is_ok()
+        && board.try_read(&["cat-file", "-e", &record]).is_some();
+    if open_here || open_in_queue {
+        let renewed = claims::renew(repo, remote, agent, claims::DEFAULT_HOURS, Some(board))?;
         if let Some(c) = renewed {
             println!(
                 "{} is yours until unix {}: landing work renewed the claim",

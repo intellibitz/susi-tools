@@ -52,7 +52,18 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     releases it when the ship closed its task). `tasks start` does add,
     commit, ship and claim in one command, and `tasks finish` does close and
     ship, in the same formats. The earlier program's
-    spellings `workflow board …` and `workflow ship` work too.
+    spellings `workflow board …` and `workflow ship` work too. A task of
+    Susi's queue (which holds the ecosystem's tasks and the Board) can claim
+    files here or in Susi Core: the claim is kept on the repository whose files
+    it covers, and a ship there renews it while the task is open in Susi.
+  - **The checks the Git hooks run** (since 2026-11-22, so no hook needs the
+    earlier program): `workflow root show | root init --agent <name>` (an agent
+    works only under its own root, marked by `.susi-agent-root`), `workflow
+    fresh` (a commit far behind the remote's `main` is refused), `workflow
+    reuse` (a commit for a task of size `m` or `l` with no reuse decision is
+    refused) and `workflow guard commit | merge` (no commit in a primary
+    checkout or straight on `main`). Each refuses only what its rule names and
+    says how to proceed; the contracts are the earlier program's.
   - **No release command since 2026-11-22.** It cut Susi Core's releases
     (v0.21.72 was its first and last), and Susi Core has had no program and cut
     no releases since that day; it left with them, and history keeps it.
@@ -96,10 +107,10 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     Windows development host (`~/.cargo/bin/susi-tools`). The earlier program
     stays installed beside it as `susi-tools-legacy`: any command this one does
     not have yet (among them `workflow vision`, `workflow prune`,
-    `workflow start`, `harvest` other than `audit`, `releases`, and the checks the Git hooks
-    call) is handed to it, with a one-line note, so every instruction and hook
-    keeps working. Not yet: the CachyOS host still runs the earlier program;
-    the hand-off ends when no contract or hook names a command it alone has.
+    `workflow start`, `harvest` other than `audit`) is handed to it, with a
+    one-line note. The Linux hosts have no earlier program: there, such a
+    command is unknown. The hand-off ends when no contract names a command it
+    alone has.
   - Build it with `cargo build --release --offline`. Test it before every ship with
     `pwsh scripts/linux-suite.ps1 -Agent <you> -Lint` (from Windows, through WSL2), or
     `cargo nextest run --offline --locked` on a Linux host; before installing a new build on a

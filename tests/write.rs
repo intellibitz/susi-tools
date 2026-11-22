@@ -873,6 +873,114 @@ fn work_in_a_public_repository_posts_to_the_agent_roots_susi_board() {
 }
 
 #[test]
+fn a_task_of_susis_queue_claims_files_in_another_repository_and_keeps_them_across_a_ship() {
+    let fx = Fx::new("crossrepo");
+    let root = fx.root.join("agents/alpha");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join(".susi-agent-root"), "{\"agent\":\"alpha\"}\n").unwrap();
+    let susi = root.join("susi-commercial-apps");
+    fx.git(
+        &fx.root,
+        &[
+            "clone",
+            "-q",
+            "--template=",
+            fx.origin().to_str().unwrap(),
+            susi.to_str().unwrap(),
+        ],
+    );
+    // A repository with no queue of its own, as Susi Tools has none.
+    let tools_origin = fx.root.join("tools.git");
+    fx.git(
+        &fx.root,
+        &[
+            "init",
+            "-q",
+            "--template=",
+            "--bare",
+            tools_origin.to_str().unwrap(),
+        ],
+    );
+    let seed = fx.root.join("tools-seed");
+    fx.git(
+        &fx.root,
+        &["init", "-q", "--template=", seed.to_str().unwrap()],
+    );
+    std::fs::write(seed.join("README.md"), "tools\n").unwrap();
+    fx.git(&seed, &["add", "-A"]);
+    fx.git(&seed, &["commit", "-q", "-m", "tools seed"]);
+    fx.git(
+        &seed,
+        &[
+            "push",
+            "-q",
+            tools_origin.to_str().unwrap(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    let tools = root.join("susi-tools");
+    fx.git(
+        &fx.root,
+        &[
+            "clone",
+            "-q",
+            "--template=",
+            tools_origin.to_str().unwrap(),
+            tools.to_str().unwrap(),
+        ],
+    );
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_susi-tools"))
+            .current_dir(&tools)
+            .env("GIT_CONFIG_GLOBAL", fx.root.join("gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("SUSI_AGENT", "alpha")
+            .env_remove("SUSI_BOARD_REPO")
+            .env_remove("SUSI_TOOLS_REPO")
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let claimed = run(&["tasks", "claim", "T-A-1", "--scope", "src"]);
+    assert!(
+        claimed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&claimed.stderr)
+    );
+    let on_tools =
+        |name: &str| fx.try_git(&tools_origin, &["rev-parse", "--verify", "--quiet", name]);
+    assert!(
+        on_tools("refs/claims/T-A-1").is_some(),
+        "the claim is kept where the files it covers live"
+    );
+    assert!(
+        fx.origin_ref("refs/claims/T-A-1").is_none(),
+        "nothing is claimed in Susi's own files"
+    );
+
+    std::fs::create_dir_all(tools.join("src")).unwrap();
+    std::fs::write(tools.join("src/new.rs"), "// new\n").unwrap();
+    fx.git(&tools, &["add", "-A"]);
+    fx.git(
+        &tools,
+        &["commit", "-q", "-m", "feat: x", "-m", "Task: T-A-1"],
+    );
+    let shipped = run(&["ship"]);
+    assert!(
+        shipped.status.success(),
+        "{}",
+        String::from_utf8_lossy(&shipped.stderr)
+    );
+    let said = String::from_utf8_lossy(&shipped.stdout);
+    assert!(
+        said.contains("landing work renewed the claim"),
+        "a ship here keeps a claim whose task is open in Susi's queue: {said}"
+    );
+    assert!(on_tools("refs/claims/T-A-1").is_some());
+}
+
+#[test]
 fn renewing_never_shortens_a_longer_lease() {
     let fx = Fx::new("longlease");
     fx.ok(
