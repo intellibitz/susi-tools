@@ -31,7 +31,14 @@ impl Fixture {
             std::env::temp_dir().join(format!("susi-tools-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join("gitconfig"), "").unwrap();
+        // No background `git maintenance run` after the fixture's own fetches and commits: it
+        // writes `objects/maintenance.lock` while the test snapshots the checkout (git 2.56 on
+        // Linux failed `reading_writes_nothing_in_the_checkout` about 1 run in 15 that way).
+        std::fs::write(
+            root.join("gitconfig"),
+            "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n",
+        )
+        .unwrap();
         let fx = Fixture { root };
         fx.git(
             &fx.root,

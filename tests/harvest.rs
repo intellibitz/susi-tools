@@ -37,6 +37,11 @@ impl Repo {
                 "commit.gpgsign=false",
                 "-c",
                 "core.autocrlf=false",
+                // No background `git maintenance run` after commits: more processes for nothing.
+                "-c",
+                "maintenance.auto=false",
+                "-c",
+                "gc.auto=0",
             ])
             .args(args)
             .output()
