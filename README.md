@@ -69,20 +69,34 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     program: every gate and the smoke run passed (380 tests), the tag was signed on
     the Windows host (qualify ran in WSL2) and published with its records, and a
     cold install from the canonical server matched the reference checksum.
+  - **The harvest audit:** `susi-tools harvest audit [--range <A..B>] [--json]`,
+    and the same as `local-harvest audit` through a second program,
+    `local-harvest`, which Susi's release gate calls by that name. The same
+    checks and messages as the earlier program's audit (Susi's
+    `tools/core-xtask`, commit `5404fd12`): each manifest's upstream blobs and
+    evidence, the Apache-2.0 4(a) to 4(d) notices, the retired records and the
+    `Harvest:` citations of the range. It keeps one `git cat-file --batch`
+    running and walks cached trees instead of starting a process per question:
+    on Susi's ledger (14 manifests, 46 retired records, 51 citations over 3,026
+    commits) it gives the earlier program's answer to the character in 0.8 s
+    warm with 12 git processes, where the earlier one took 4.8 s with 89.
+    `local-harvest`'s other commands still go to the earlier program, installed
+    beside it as `local-harvest-legacy`.
   - **Same formats as the earlier program**, so both read each other's work.
     Checked on 2026-11-22 on Susi's live Board and queue: the earlier program
     read this program's claim (holder, lease, scopes), listed its Board
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 37, on made-up repositories and records only. On Linux they take about 2 s; on
-    Windows about 15 s, because Windows starts the many short `git`
-    processes slowly when the tests run side by side.
+  - **Tests:** 50, on made-up repositories and records only. On Linux they take about 2 s. On
+    Windows the whole suite took 59 s on 2026-11-22 (the write tests, each building scratch
+    repositories), over the 10-second line: Windows started a `git` process in about 117 ms
+    that day, and those tests start hundreds. Next: build their fixtures with fewer processes.
   - **Installed since 2026-11-22**, in place of the earlier program, on the
     Windows development host (`~/.cargo/bin/susi-tools`). The earlier program
     stays installed beside it as `susi-tools-legacy`: any command this one does
     not have yet (among them `workflow vision`, `workflow prune`,
-    `workflow start`, `harvest`, `releases`, and the checks the Git hooks
+    `workflow start`, `harvest` other than `audit`, `releases`, and the checks the Git hooks
     call) is handed to it, with a one-line note, so every instruction and hook
     keeps working. Not yet: the CachyOS host still runs the earlier program;
     the hand-off ends when no contract or hook names a command it alone has.

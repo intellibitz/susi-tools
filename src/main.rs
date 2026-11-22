@@ -10,6 +10,7 @@ mod board;
 mod check;
 mod claims;
 mod git;
+mod harvest;
 mod home;
 mod json;
 mod release;
@@ -42,6 +43,10 @@ Tasks
   susi-tools tasks finish <id>   close the task (its acceptance runs) and ship: one command
 Shipping
   susi-tools ship
+Harvested code
+  susi-tools harvest audit [--range <A..B>] [--json]
+                                 check the harvest ledger against Git: manifests, notices,
+                                 retired records and the Harvest: citations of the range
 Releases of Susi Core (on an x86_64 Linux host, in a clean checkout of main)
   susi-tools release check [vX.Y.Z]                  every check before the gates; changes nothing
   susi-tools release qualify [vX.Y.Z] --task <id> [--sign]
@@ -721,6 +726,24 @@ fn run(args: &[String]) -> Result<(), Failure> {
                     )?;
                     after_ship(&repo, &remote, &board, &agent)
                 }
+            }
+        }
+        ["harvest", "audit", ..] => {
+            let cwd = std::env::current_dir().map_err(|e| Failure::Run(e.to_string()))?;
+            let report = harvest::run_audit(&cwd, rest).map_err(Failure::Run)?;
+            // As the earlier `local-harvest audit`: the text on standard output when it passes, on
+            // standard error when it fails; `--json` prints the JSON on standard output either way.
+            if rest.iter().any(|a| a == "--json") {
+                println!("{}", report.json);
+            } else if report.ok {
+                println!("{}", report.text);
+            }
+            if report.ok {
+                Ok(())
+            } else if rest.iter().any(|a| a == "--json") {
+                Err(Failure::Run("harvest audit failed".into()))
+            } else {
+                Err(Failure::Run(report.text))
             }
         }
         _ => forward(args),
