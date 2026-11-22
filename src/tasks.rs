@@ -222,9 +222,18 @@ fn used_numbers(repo: &Repo, stem: &str) -> Result<Vec<u64>, String> {
         .lines()
         .map(str::to_owned),
     );
-    for prefix in ["refs/closed/", "refs/abandoned/", "refs/claims/"] {
-        names.extend(repo.refs(prefix)?.into_iter().map(|(name, _)| name));
-    }
+    // Close receipts, abandonments and claims, in one `for-each-ref`.
+    names.extend(
+        repo.read(&[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/closed/",
+            "refs/abandoned/",
+            "refs/claims/",
+        ])?
+        .lines()
+        .map(str::to_owned),
+    );
     Ok(names
         .iter()
         .filter_map(|name| {

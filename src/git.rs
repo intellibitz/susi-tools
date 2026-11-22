@@ -3,18 +3,34 @@
 //! explicitly and takes no optional locks. Reads write nothing. Writes go only through Git itself
 //! (objects, refs, commits and pushes): no file of this program's own is ever left in a checkout.
 
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::rc::Rc;
 
 pub struct Repo {
     git_dir: PathBuf,
     work_tree: Option<PathBuf>,
-    /// Fetches this run already made, by remote and refspecs. A command that reads the same
-    /// remote again (a ship, then its claim's renewal, then the claim it re-makes) reuses the
-    /// first fetch instead of starting git and its transport again; any push of this program's
-    /// own clears them, so a lease is never taken from a view older than that push.
-    fetched: std::cell::RefCell<std::collections::HashSet<String>>,
+    /// Fetches this run already made, by remote and refspecs, shared by every `Repo` of this run
+    /// for the same git directory. A command that reads the same remote again (a ship, then its
+    /// claim's renewal, then the claim `tasks start` makes) reuses the first fetch instead of
+    /// starting git and its transport again; a push of this program's own forgets every fetch
+    /// whose refspecs cover a ref it pushed, so a lease is never taken from a view older than
+    /// that push.
+    fetched: Rc<RefCell<HashSet<String>>>,
+}
+
+thread_local! {
+    /// What `Repo::open` found this run, by the path asked for: one `rev-parse` per repository
+    /// per run, however many steps of a command open it (`tasks start` is an add, a ship and a
+    /// claim, each with its Board post).
+    static OPENED: RefCell<HashMap<PathBuf, (PathBuf, Option<PathBuf>)>> =
+        RefCell::new(HashMap::new());
+    /// The fetches made this run, by git directory (see `Repo::fetched`).
+    static FETCHED: RefCell<HashMap<PathBuf, Rc<RefCell<HashSet<String>>>>> =
+        RefCell::new(HashMap::new());
 }
 
 /// One ref change in an atomic push. `new: None` deletes the ref. `expect` is the value the ref
@@ -33,8 +49,29 @@ pub enum PushOutcome {
 }
 
 impl Repo {
-    /// Open a repository: a bare repository, a checkout, or a linked worktree.
+    /// Open a repository: a bare repository, a checkout, or a linked worktree. A path this run
+    /// already opened is not asked of git again.
     pub fn open(path: &Path) -> Result<Repo, String> {
+        let key = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let (git_dir, work_tree) = match OPENED.with(|opened| opened.borrow().get(&key).cloned()) {
+            Some(found) => found,
+            None => {
+                let found = Repo::discover(path)?;
+                OPENED.with(|opened| opened.borrow_mut().insert(key, found.clone()));
+                found
+            }
+        };
+        let fetched =
+            FETCHED.with(|all| all.borrow_mut().entry(git_dir.clone()).or_default().clone());
+        Ok(Repo {
+            git_dir,
+            work_tree,
+            fetched,
+        })
+    }
+
+    /// The git directory, and the work tree of a checkout, as git reports them for `path`.
+    fn discover(path: &Path) -> Result<(PathBuf, Option<PathBuf>), String> {
         let out = base_command()
             .arg("-C")
             .arg(path)
@@ -62,11 +99,12 @@ impl Repo {
         } else {
             lines.next().map(|t| PathBuf::from(t.trim()))
         };
-        Ok(Repo {
-            git_dir: PathBuf::from(git_dir),
-            work_tree,
-            fetched: Default::default(),
-        })
+        Ok((PathBuf::from(git_dir), work_tree))
+    }
+
+    /// The repository's git directory, as git reported it.
+    pub fn git_dir(&self) -> &Path {
+        &self.git_dir
     }
 
     pub fn work_tree(&self) -> Result<&Path, String> {
@@ -199,8 +237,12 @@ impl Repo {
             args.push(format!("{}:{}", u.new.as_deref().unwrap_or(""), u.refname));
         }
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        // Whatever the push does, the remote may differ from what this run fetched.
-        self.fetched.borrow_mut().clear();
+        // Whatever the push does, the refs it names may differ on the remote from what this run
+        // fetched: forget each fetch from this remote that covers one of them.
+        let pushed: Vec<&str> = updates.iter().map(|u| u.refname.as_str()).collect();
+        self.fetched
+            .borrow_mut()
+            .retain(|fetch| !fetch_covers(fetch, remote, &pushed));
         let out = self
             .command()
             .args(&refs)
@@ -274,6 +316,32 @@ impl Repo {
     }
 }
 
+/// Whether a fetch this run made (its arguments, as `fetch_once` keys them) may hold a stale
+/// copy of one of `pushed` on `remote`. A fetch from another remote never does; a fetch with no
+/// explicit refspec (the remote's configured ones) always may; otherwise one of its refspecs'
+/// sources names the ref, or ends in `*` and starts it.
+fn fetch_covers(fetch: &str, remote: &str, pushed: &[&str]) -> bool {
+    let args: Vec<&str> = fetch.split('\u{1f}').collect();
+    if !args.contains(&remote) {
+        return false;
+    }
+    let sources: Vec<&str> = args
+        .iter()
+        .filter(|arg| !arg.starts_with('-'))
+        .filter_map(|arg| arg.trim_start_matches('+').split_once(':'))
+        .map(|(source, _)| source)
+        .collect();
+    if sources.is_empty() {
+        return true;
+    }
+    pushed.iter().any(|name| {
+        sources.iter().any(|source| match source.strip_suffix('*') {
+            Some(prefix) => name.starts_with(prefix),
+            None => name == source,
+        })
+    })
+}
+
 fn pairs(text: &str) -> Vec<(String, String)> {
     text.lines()
         .filter_map(|line| line.split_once(' '))
@@ -300,4 +368,34 @@ fn base_command() -> Command {
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0");
     command
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fetch_covers;
+
+    #[test]
+    fn a_push_forgets_only_the_fetches_that_cover_what_it_pushed() {
+        let claims = [
+            "--no-tags",
+            "--prune",
+            "origin",
+            "+refs/heads/main:refs/susi-tools/remote/main",
+            "+refs/claims/*:refs/susi-tools/remote/claims/*",
+        ]
+        .join("\u{1f}");
+        // A Board item is not in the claims fetch; a claim and main are.
+        assert!(!fetch_covers(&claims, "origin", &["refs/board/items/7"]));
+        assert!(fetch_covers(&claims, "origin", &["refs/claims/T-A-1"]));
+        assert!(fetch_covers(&claims, "origin", &["refs/heads/main"]));
+        assert!(!fetch_covers(&claims, "origin", &["refs/heads/mainline"]));
+        // Another remote's fetch is never stale for this push; a fetch of the configured
+        // refspecs always may be.
+        assert!(!fetch_covers(&claims, "backup", &["refs/claims/T-A-1"]));
+        assert!(fetch_covers(
+            &["origin"].join("\u{1f}"),
+            "origin",
+            &["refs/board/items/7"]
+        ));
+    }
 }

@@ -143,6 +143,15 @@ fn render(post: &Post<'_>, n: u64, prev: &str, host: &str, now: i64) -> Vec<u8> 
     text.into_bytes()
 }
 
+thread_local! {
+    /// The item this run last posted, by Board (git directory and remote): a second post in the
+    /// same run (`tasks start` posts Landed, then the claim) first tries the number after it,
+    /// naming it, without listing the Board again. The push still only creates a ref that does
+    /// not exist yet, so a number someone took meanwhile is refused and the Board is listed.
+    static LAST_POSTED: std::cell::RefCell<std::collections::HashMap<(std::path::PathBuf, String), (u64, String)>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 /// Post one item on `remote`'s Board: the next free number, naming the item before it. Two
 /// posters never share a number: the push only creates a ref that does not exist yet, and a
 /// poster that loses the race reads the Board again and takes the next number.
@@ -154,11 +163,15 @@ pub fn post(repo: &Repo, remote: &str, post: &Post<'_>) -> Result<(u64, String),
         return Err("a title is one non-empty line".into());
     }
     let host = crate::agent::host();
+    let board_key = (repo.git_dir().to_path_buf(), remote.to_owned());
+    let mut guess = LAST_POSTED.with(|last| last.borrow().get(&board_key).cloned());
     for attempt in 0..12u32 {
-        let board = numbered(repo.remote_refs(remote, &["refs/board/items/*"])?);
-        let (n, prev) = board
-            .last()
-            .map_or((1, String::new()), |(n, oid)| (n + 1, oid.clone()));
+        let (n, prev) = match guess.take() {
+            Some((last, oid)) => (last + 1, oid),
+            None => numbered(repo.remote_refs(remote, &["refs/board/items/*"])?)
+                .last()
+                .map_or((1, String::new()), |(n, oid)| (n + 1, oid.clone())),
+        };
         let bytes = render(post, n, &prev, &host, crate::time::now_unix());
         let oid = repo.write_blob(&bytes)?;
         let update = Update {
@@ -167,7 +180,12 @@ pub fn post(repo: &Repo, remote: &str, post: &Post<'_>) -> Result<(u64, String),
             expect: None,
         };
         match repo.push_atomic(remote, &[update])? {
-            PushOutcome::Done => return Ok((n, oid)),
+            PushOutcome::Done => {
+                LAST_POSTED.with(|last| {
+                    last.borrow_mut().insert(board_key, (n, oid.clone()));
+                });
+                return Ok((n, oid));
+            }
             PushOutcome::Stale => {
                 std::thread::sleep(std::time::Duration::from_millis(
                     40 + u64::from(attempt) * 60 + u64::from(std::process::id() % 50),
