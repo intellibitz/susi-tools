@@ -61,10 +61,11 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     push, and refuses a version already published. Proven on 2026-11-22 on a
     scratch copy of Core with a scratch origin: `qualify` took 12 s warm,
     Core's own record tests accepted the records, and Core's `install.sh`
-    rebuilt the release from the scratch origin with a matching checksum. Not
-    yet: no real release has been cut with it, and Core's licence policy
-    refuses `unicode-ident` (Unicode-3.0) today, so the licences gate stops a
-    real release until that is decided.
+    rebuilt the release from the scratch origin with a matching checksum. On
+    2026-11-22 Susi Core v0.21.72 was qualified with it on the real `main`: every
+    gate and the smoke run passed (380 tests), and the tag and records waited
+    locally for the owner's approval to sign and publish. Core's licence policy
+    allows Unicode-3.0 for `unicode-ident` alone since that day.
   - **Same formats as the earlier program**, so both read each other's work.
     Checked on 2026-11-22 on Susi's live Board and queue: the earlier program
     read this program's claim (holder, lease, scopes), listed its Board
