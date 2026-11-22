@@ -91,7 +91,11 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
   - **Tests:** 50, on made-up repositories and records only. On Linux they take about 2 s. On
     Windows the whole suite took 59 s on 2026-11-22 (the write tests, each building scratch
     repositories), over the 10-second line: Windows started a `git` process in about 117 ms
-    that day, and those tests start hundreds. Next: build their fixtures with fewer processes.
+    that day, and those tests start hundreds. Their made-up repositories are now built once
+    for every test process and run (until 2026-11-22 each test process built its own and left it
+    in the temporary folder) and run no background `git maintenance`: 58 -> 50 s. The rest is the
+    git work of the `susi-tools` commands these tests drive (about 9 s for one test alone,
+    40-50 s when all run side by side). Next: fewer git processes inside those commands.
   - **Installed since 2026-11-22**, in place of the earlier program, on the
     Windows development host (`~/.cargo/bin/susi-tools`). The earlier program
     stays installed beside it as `susi-tools-legacy`: any command this one does

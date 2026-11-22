@@ -35,7 +35,8 @@ fn task_json(id: &str, deps: &[&str], accept: &[&str]) -> String {
 fn write_gitconfig(dir: &Path) {
     std::fs::write(
         dir.join("gitconfig"),
-        "[user]\n\tname = fixture\n\temail = fixture@example.test\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n",
+        // No background `git maintenance run` after commits: more processes for nothing.
+        "[user]\n\tname = fixture\n\temail = fixture@example.test\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n",
     )
     .unwrap();
 }
@@ -67,14 +68,24 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
-/// The made-up repositories, built once per test run with Git and then copied for each test:
-/// `origin.git`, whose main holds open tasks T-A-1, T-A-2 (waits on T-A-1) and T-A-3, and the
-/// clones `alpha` and `beta`.
+/// The made-up repositories, built with Git once and then copied for each test: `origin.git`,
+/// whose main holds open tasks T-A-1, T-A-2 (waits on T-A-1) and T-A-3, and the clones `alpha`
+/// and `beta`. One template serves every test process and every run: cargo-nextest runs each
+/// test in its own process, and until 2026-11-22 each one built its own template (about ten git
+/// processes) and left it behind. The name carries a digest of this file, so a change here
+/// builds a new template; a finished one has a `.complete` marker.
 fn template() -> &'static Path {
     static TEMPLATE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     TEMPLATE.get_or_init(|| {
-        let root =
-            std::env::temp_dir().join(format!("susi-tools-w-template-{}", std::process::id()));
+        use std::hash::{Hash, Hasher};
+        let mut digest = std::collections::hash_map::DefaultHasher::new();
+        include_str!("write.rs").hash(&mut digest);
+        let name = format!("susi-tools-w-template-{:016x}", digest.finish());
+        let ready = std::env::temp_dir().join(&name);
+        if ready.join(".complete").is_file() {
+            return ready;
+        }
+        let root = std::env::temp_dir().join(format!("{name}-building-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         write_gitconfig(&root);
@@ -125,7 +136,17 @@ fn template() -> &'static Path {
                 &["clone", "-q", "--template=", "origin.git", agent],
             );
         }
-        root
+        std::fs::write(root.join(".complete"), "").unwrap();
+        // Another test process may have finished the same template first: then use that one.
+        if std::fs::rename(&root, &ready).is_err() {
+            let _ = std::fs::remove_dir_all(&root);
+            assert!(
+                ready.join(".complete").is_file(),
+                "no template at {}",
+                ready.display()
+            );
+        }
+        ready
     })
 }
 
