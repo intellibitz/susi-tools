@@ -36,6 +36,10 @@ Tasks
   susi-tools tasks renew [--hours <1-24>]
   susi-tools tasks release <id>
   susi-tools tasks close <id>
+  susi-tools tasks start <title> --accept <command> --scope <path>... [--goal <text>] [--size xs|s|m|l]
+                         [--hours <1-24>]
+                                 add, commit and ship the task's record, then claim it: one command
+  susi-tools tasks finish <id>   close the task (its acceptance runs) and ship: one command
 Shipping
   susi-tools ship
 Releases of Susi Core (on an x86_64 Linux host, in a clean checkout of main)
@@ -193,6 +197,24 @@ impl Options {
 
     fn remote(&self) -> String {
         self.remote.clone().unwrap_or_else(|| "origin".into())
+    }
+
+    /// `--repo`, `--remote` and `--agent` as given, to pass on to the commands a command runs.
+    fn common_args(&self) -> Vec<String> {
+        let mut args = Vec::new();
+        if let Some(repo) = &self.repo {
+            args.push("--repo".to_owned());
+            args.push(repo.display().to_string());
+        }
+        if let Some(remote) = &self.remote {
+            args.push("--remote".to_owned());
+            args.push(remote.clone());
+        }
+        if let Some(agent) = &self.agent {
+            args.push("--agent".to_owned());
+            args.push(agent.clone());
+        }
+        args
     }
 
     fn one_id(&self, what: &str) -> Result<String, Failure> {
@@ -412,6 +434,90 @@ fn run(args: &[String]) -> Result<(), Failure> {
             )?;
             println!("added {id} at {}: commit it to share it", path.display());
             Ok(())
+        }
+        ["tasks", "start", ..] => {
+            let o = parse(
+                rest,
+                &[
+                    "--accept", "--goal", "--size", "--dep", "--scope", "--hours",
+                ],
+            )?;
+            let repo = o.repo()?;
+            let agent = agent::name(o.agent.as_deref(), &repo)?;
+            let title = match o.positional.as_slice() {
+                [title] => title.clone(),
+                _ => return Err(Failure::Usage("tasks start takes one title".into())),
+            };
+            if o.scopes.is_empty() {
+                return Err(Failure::Usage(
+                    "tasks start needs --scope <path>: what the task will change".into(),
+                ));
+            }
+            if !repo
+                .read(&["status", "--porcelain", "--untracked-files=no"])?
+                .trim()
+                .is_empty()
+            {
+                return Err(Failure::Run(
+                    "commit or set aside your changes first: tasks start commits only its own record"
+                        .into(),
+                ));
+            }
+            let accept: Vec<String> = o
+                .accept
+                .clone()
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect();
+            let (id, path) = tasks::add(
+                &repo,
+                &tasks::NewTask {
+                    title: &title,
+                    goal: o.goal.as_deref().unwrap_or(""),
+                    size: o.size.as_deref().unwrap_or("m"),
+                    accept: &accept,
+                    deps: &o.deps,
+                    agent: &agent,
+                },
+            )?;
+            let record = path.display().to_string();
+            repo.read(&["add", "--", &record])?;
+            repo.run_visible(&[
+                "commit",
+                "-q",
+                "-m",
+                &task_subject(&id, &title),
+                "-m",
+                &format!("Task: {id}"),
+                "--",
+                &record,
+            ])?;
+            println!("added {id} and committed its record");
+            let common = o.common_args();
+            run(&[vec!["ship".to_owned()], common.clone()].concat())?;
+            let mut claim = vec!["tasks".to_owned(), "claim".to_owned(), id];
+            for scope in &o.scopes {
+                claim.push("--scope".into());
+                claim.push(scope.clone());
+            }
+            if let Some(hours) = o.hours {
+                claim.push("--hours".into());
+                claim.push(hours.to_string());
+            }
+            claim.extend(common);
+            run(&claim)
+        }
+        ["tasks", "finish", ..] => {
+            let o = parse(rest, &[])?;
+            let id = o.one_id("tasks finish")?;
+            let common = o.common_args();
+            run(&[
+                vec!["tasks".to_owned(), "close".to_owned(), id],
+                common.clone(),
+            ]
+            .concat())?;
+            run(&[vec!["ship".to_owned()], common].concat())
         }
         ["tasks", "claim", ..] => {
             let o = parse(rest, &["--scope", "--hours"])?;
@@ -652,6 +758,34 @@ fn forward(args: &[String]) -> Result<(), Failure> {
     }
 }
 
+/// `chore(tasks): add <id>, <title>`, the title cut at a word so the subject keeps to 72
+/// characters.
+fn task_subject(id: &str, title: &str) -> String {
+    let head = format!("chore(tasks): add {id}");
+    let room = 72usize.saturating_sub(head.chars().count() + 2);
+    let mut kept = String::new();
+    for word in title.split_whitespace() {
+        let next = if kept.is_empty() {
+            word.chars().count()
+        } else {
+            kept.chars().count() + 1 + word.chars().count()
+        };
+        if next > room {
+            break;
+        }
+        if !kept.is_empty() {
+            kept.push(' ');
+        }
+        kept.push_str(word);
+    }
+    let kept = kept.trim_end_matches([',', '.', ';', ':']);
+    if kept.is_empty() {
+        head
+    } else {
+        format!("{head}, {kept}")
+    }
+}
+
 fn find_on_path(name: &str) -> Option<PathBuf> {
     let exe = if cfg!(windows) {
         format!("{name}.exe")
@@ -700,5 +834,32 @@ fn after_ship(
             release_post(board, "origin", &task, &token)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::task_subject;
+
+    #[test]
+    fn a_task_commit_subject_keeps_to_72_characters_and_cuts_at_a_word() {
+        assert_eq!(
+            task_subject("T-CLAUDE-60", "Fix the gate"),
+            "chore(tasks): add T-CLAUDE-60, Fix the gate"
+        );
+        let long = task_subject(
+            "T-CLAUDE-60",
+            "Make the agent vault installable by another company, under a licence it checks",
+        );
+        assert!(long.chars().count() <= 72, "{long}");
+        assert!(long.starts_with("chore(tasks): add T-CLAUDE-60, Make the agent vault"));
+        assert!(!long.ends_with(','), "{long}");
+        assert_eq!(
+            task_subject(
+                "T-CLAUDE-60",
+                "Supercalifragilisticexpialidocious-and-then-some-more-words"
+            ),
+            "chore(tasks): add T-CLAUDE-60"
+        );
     }
 }

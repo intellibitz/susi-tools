@@ -46,7 +46,9 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     history included), `tasks close` (runs the acceptance and, only if it
     passes, commits the record's removal) and `ship` (committed work only, a
     fast-forward of `main`, then Landed on the Board; renews your claim, or
-    releases it when the ship closed its task). The earlier program's
+    releases it when the ship closed its task). `tasks start` does add,
+    commit, ship and claim in one command, and `tasks finish` does close and
+    ship, in the same formats. The earlier program's
     spellings `workflow board …` and `workflow ship` work too.
   - **Releases of Susi Core:** `release check | qualify | publish`, on an
     x86_64 Linux host in a clean checkout of Core's `main`. `qualify` runs
@@ -73,7 +75,7 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 35, on made-up repositories and records only. On Linux they take about 1 s; on
+  - **Tests:** 37, on made-up repositories and records only. On Linux they take about 2 s; on
     Windows about 15 s, because Windows starts the many short `git`
     processes slowly when the tests run side by side.
   - **Installed since 2026-11-22**, in place of the earlier program, on the

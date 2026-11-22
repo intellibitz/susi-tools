@@ -571,6 +571,64 @@ fn close_commits_only_when_the_acceptance_passes() {
     );
 }
 
+#[test]
+fn start_and_finish_are_one_command_each() {
+    let fx = Fx::new("startfinish");
+    let alpha = fx.clone_of("alpha");
+    let (code, _, err) = fx.tool(
+        "alpha",
+        &["tasks", "start", "No scope", "--accept", "cargo --version"],
+    );
+    assert!(
+        code == 2 && err.contains("needs --scope"),
+        "a start without a scope is a usage error: {code} {err}"
+    );
+    let out = fx.ok(
+        "alpha",
+        &[
+            "tasks",
+            "start",
+            "Write the started thing",
+            "--accept",
+            "cargo --version",
+            "--scope",
+            "src",
+            "--size",
+            "s",
+        ],
+    );
+    assert!(
+        out.contains("added T-ALPHA-1 and committed its record"),
+        "{out}"
+    );
+    assert!(out.contains("shipped"), "{out}");
+    let head = fx.git(&alpha, &["rev-parse", "HEAD"]);
+    assert_eq!(fx.origin_ref("refs/heads/main"), Some(head.clone()));
+    assert_eq!(
+        fx.git(&alpha, &["log", "-1", "--format=%s"]),
+        "chore(tasks): add T-ALPHA-1, Write the started thing"
+    );
+    assert!(
+        fx.origin_ref("refs/claims/T-ALPHA-1").is_some(),
+        "start claims the task"
+    );
+    commit_work(&fx, "alpha", "src/started.rs", "T-ALPHA-1");
+    let out = fx.ok("alpha", &["tasks", "finish", "T-ALPHA-1"]);
+    assert!(
+        out.contains("closed T-ALPHA-1") && out.contains("shipped"),
+        "{out}"
+    );
+    assert_eq!(
+        fx.origin_ref("refs/heads/main"),
+        Some(fx.git(&alpha, &["rev-parse", "HEAD"]))
+    );
+    assert!(!alpha.join(".agents/tasks/T-ALPHA-1.json").exists());
+    assert!(
+        fx.origin_ref("refs/claims/T-ALPHA-1").is_none(),
+        "finishing releases the claim"
+    );
+}
+
 fn commit_work(fx: &Fx, agent: &str, file: &str, task: &str) {
     let dir = fx.clone_of(agent);
     let path = dir.join(file);
