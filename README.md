@@ -33,6 +33,9 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
 - **`susi-tools` 0.2, the development program, rebuilt small** (`src/`). It uses
   nothing but the Rust standard library and the `git` program, and it never
   leaves a file of its own in a checkout: what it changes goes through Git.
+  On Windows it starts the real `git.exe` behind Git for Windows' `cmd`
+  launcher, found once per run (`src/git_program.rs`), which spares the
+  launcher's second process on every call; elsewhere, plain `git`.
   - **Reads:** `board list`, `tasks list` (any repository, `--repo`).
   - **Session start:** `workflow check` fast-forwards a clean checkout to the
     remote's `main`, lists requests addressed to you that you have not

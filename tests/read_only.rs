@@ -5,6 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[path = "../src/git_program.rs"]
+mod git_program;
+
 struct Fixture {
     root: PathBuf,
 }
@@ -32,9 +35,20 @@ impl Fixture {
         let fx = Fixture { root };
         fx.git(
             &fx.root,
-            &["init", "-q", "--bare", "-b", "main", "repo.git"],
+            &[
+                "init",
+                "-q",
+                "--template=",
+                "--bare",
+                "-b",
+                "main",
+                "repo.git",
+            ],
         );
-        fx.git(&fx.root, &["init", "-q", "-b", "main", "work"]);
+        fx.git(
+            &fx.root,
+            &["init", "-q", "--template=", "-b", "main", "work"],
+        );
         fx
     }
 
@@ -47,7 +61,7 @@ impl Fixture {
     }
 
     fn git(&self, dir: &Path, args: &[&str]) -> String {
-        let out = Command::new("git")
+        let out = Command::new(git_program::path())
             .current_dir(dir)
             .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")

@@ -6,6 +6,9 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
+#[path = "../src/git_program.rs"]
+mod git_program;
+
 const APACHE: &str = "                                 Apache License\n                           Version 2.0, January 2004\n";
 const COPYRIGHT: &str = "Copyright 2024 Upstream Authors";
 
@@ -21,7 +24,7 @@ impl Drop for Repo {
 
 impl Repo {
     fn git(&self, args: &[&str]) -> String {
-        let out = Command::new("git")
+        let out = Command::new(git_program::path())
             .current_dir(&self.root)
             .env("GIT_CONFIG_GLOBAL", self.root.join(".git/fixture-global"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -121,7 +124,7 @@ fn harvested(tag: &str) -> (Repo, String) {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
     let repo = Repo { root };
-    repo.git(&["init", "-q", "-b", "main"]);
+    repo.git(&["init", "-q", "--template=", "-b", "main"]);
     repo.write("upstream/LICENSE", APACHE);
     repo.write("upstream/a.rs", SOURCE);
     let upstream = repo.commit("upstream");

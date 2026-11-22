@@ -283,8 +283,9 @@ fn pairs(text: &str) -> Vec<(String, String)> {
 
 /// `git` with the caller's Git routing removed, so a stray `GIT_DIR` or `GIT_INDEX_FILE` can
 /// never point a read or a write at another repository, and with no optional locks taken.
+/// The program is the real `git` (`git_program`), never Git for Windows' launcher.
 fn base_command() -> Command {
-    let mut command = Command::new("git");
+    let mut command = Command::new(crate::git_program::path());
     for (name, _) in std::env::vars_os() {
         let upper = name.to_string_lossy().to_ascii_uppercase();
         if upper.starts_with("GIT_")

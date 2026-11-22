@@ -7,6 +7,8 @@
 //! rebuilt too.
 #![forbid(unsafe_code)]
 
+#[path = "../git_program.rs"]
+mod git_program;
 #[path = "../harvest.rs"]
 mod harvest;
 #[path = "../json.rs"]

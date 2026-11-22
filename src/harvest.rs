@@ -115,7 +115,7 @@ impl Git {
     }
 
     fn output(&self, args: &[&str], input: Option<&[u8]>) -> Result<Output> {
-        let mut command = Command::new("git");
+        let mut command = Command::new(crate::git_program::path());
         command
             .current_dir(&self.root)
             .arg("--literal-pathspecs")
@@ -200,7 +200,7 @@ impl Git {
         }
         let mut slot = self.objects.borrow_mut();
         if slot.is_none() {
-            let mut command = Command::new("git");
+            let mut command = Command::new(crate::git_program::path());
             command
                 .current_dir(&self.root)
                 .args([

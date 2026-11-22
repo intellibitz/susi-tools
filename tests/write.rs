@@ -5,6 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[path = "../src/git_program.rs"]
+mod git_program;
+
 struct Fx {
     root: PathBuf,
 }
@@ -42,7 +45,7 @@ fn write_gitconfig(dir: &Path) {
 }
 
 fn git_in(config: &Path, dir: &Path, args: &[&str]) {
-    let out = Command::new("git")
+    let out = Command::new(git_program::path())
         .current_dir(dir)
         .env("GIT_CONFIG_GLOBAL", config)
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -188,7 +191,7 @@ impl Fx {
     }
 
     fn git(&self, dir: &Path, args: &[&str]) -> String {
-        let out = Command::new("git")
+        let out = Command::new(git_program::path())
             .current_dir(dir)
             .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -204,7 +207,7 @@ impl Fx {
     }
 
     fn try_git(&self, dir: &Path, args: &[&str]) -> Option<String> {
-        let out = Command::new("git")
+        let out = Command::new(git_program::path())
             .current_dir(dir)
             .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")

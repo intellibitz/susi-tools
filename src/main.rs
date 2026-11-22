@@ -10,6 +10,7 @@ mod board;
 mod check;
 mod claims;
 mod git;
+mod git_program;
 mod harvest;
 mod home;
 mod json;
@@ -862,7 +863,64 @@ fn after_ship(
 
 #[cfg(test)]
 mod tests {
+    use super::git_program::real_git;
     use super::task_subject;
+    use std::path::{Path, PathBuf};
+
+    /// A made-up Git for Windows install under a fresh folder: the launcher in `cmd`, and the
+    /// real program with its `libexec\git-core` under `ucrt64` when `real` is set.
+    fn install(tag: &str, real: bool) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("susi-tools-git-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        touch(&root.join("Git/cmd/git.exe"));
+        if real {
+            touch(&root.join("Git/ucrt64/bin/git.exe"));
+            std::fs::create_dir_all(root.join("Git/ucrt64/libexec/git-core")).unwrap();
+        }
+        root
+    }
+
+    fn touch(file: &Path) {
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, b"").unwrap();
+    }
+
+    fn path_of(dirs: &[PathBuf]) -> std::ffi::OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
+    #[test]
+    fn the_real_git_is_started_instead_of_git_for_windows_launcher() {
+        let root = install("launcher", true);
+        let other = root.join("tools");
+        std::fs::create_dir_all(&other).unwrap();
+        let found = real_git(&path_of(&[other, root.join("Git/cmd")]));
+        assert_eq!(
+            found,
+            Some(root.join("Git/ucrt64").join("bin").join("git.exe"))
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn any_other_first_git_is_left_to_path_as_before() {
+        let root = install("other", true);
+        // A git that is not the launcher comes first on the path: it is the one started.
+        touch(&root.join("scoop/shims/git.exe"));
+        let first = path_of(&[root.join("scoop/shims"), root.join("Git/cmd")]);
+        assert_eq!(real_git(&first), None);
+        // The real program itself first on the path: nothing to replace.
+        assert_eq!(real_git(&path_of(&[root.join("Git/ucrt64/bin")])), None);
+        // A launcher without the real program beside it, and no git at all.
+        let bare = install("bare", false);
+        assert_eq!(real_git(&path_of(&[bare.join("Git/cmd")])), None);
+        assert_eq!(real_git(&path_of(&[root.join("scoop")])), None);
+        // Relative entries are never searched.
+        assert_eq!(real_git(std::ffi::OsStr::new("Git/cmd")), None);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&bare);
+    }
 
     #[test]
     fn a_task_commit_subject_keeps_to_72_characters_and_cuts_at_a_word() {
