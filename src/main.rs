@@ -511,17 +511,19 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let tag = o.positional.first().map(String::as_str);
             let done = release::qualify(&repo, &o.remote(), tag, &task, o.sign)?;
             println!(
-                "qualified {} on {} in {} s: {} tests passed, {} failed, {} skipped",
+                "qualified {} on {} in {} s: {} tests passed across {} binaries, {} failed, {} skipped",
                 done.tag,
                 &done.commit[..12],
                 done.seconds,
-                done.tests.0,
-                done.tests.1,
-                done.tests.2
+                done.tests.passed,
+                done.tests.binaries,
+                done.tests.failed,
+                done.tests.skipped
             );
             println!(
-                "tagged {} locally and committed its records as {}; nothing is published yet",
+                "tagged {} on {} (which adds only its qualification record) and committed its release record as {}; nothing is published yet",
                 done.tag,
+                &done.tag_commit[..12],
                 &done.records_commit[..12]
             );
             println!("next: susi-tools release publish {}", done.tag);

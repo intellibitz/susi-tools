@@ -54,10 +54,11 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     suite with cargo-nextest, doc-tests, the distribution build), then a smoke
     run of the built program from a private home (`--version`, an MCP session
     over standard input and output, the daemon's health, token check and
-    stop). Only when all of it passes does it tag the commit (annotated;
-    `--sign` signs it) and commit `releases/<tag>.json` and
-    `releases/qualification/<tag>.json` in Core's formats; it publishes
-    nothing. `publish` pushes that commit to `main` and the tag in one atomic
+    stop). Only when all of it passes does it commit
+    `releases/qualification/<tag>.json` alone on top of the qualified commit,
+    tag that commit (annotated; `--sign` signs it), as the release-tag check
+    of Core's pre-push hook requires, and commit `releases/<tag>.json`, which
+    names the tagged commit, in Core's formats; it publishes nothing. `publish` pushes that commit to `main` and the tag in one atomic
     push, and refuses a version already published. Proven on 2026-11-22 on a
     scratch copy of Core with a scratch origin: `qualify` took 12 s warm,
     Core's own record tests accepted the records, and Core's `install.sh`

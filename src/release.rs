@@ -4,10 +4,11 @@
 //! A Core release is an annotated tag `vX.Y.Z` on a commit of `main` and two committed records:
 //! `releases/<tag>.json`, which the installer reads to rebuild the tag, and
 //! `releases/qualification/<tag>.json`, every gate that passed on the exact tree. Their formats
-//! are Core's (`tests/release_records.rs` pins them). `qualify` runs the gates on the commit,
-//! tags it and commits the records on top; nothing leaves the machine until `publish` pushes the
-//! records' commit to `main` and the tag in one atomic push, so the tag and its records are
-//! published together or not at all.
+//! are Core's (`tests/release_records.rs` pins them). `qualify` runs the gates on the commit of
+//! `main` (A), commits the qualification record alone on top of it (B) and tags B, as the
+//! release-tag check of Core's pre-push hook requires, then commits the release record naming B
+//! (C). Nothing leaves the machine until `publish` pushes C to `main` and the tag in one atomic
+//! push, so the tag and its records are published together or not at all.
 
 use crate::git::{PushOutcome, Repo, Update};
 use crate::json::{quote, Json};
@@ -62,6 +63,19 @@ pub struct Passed {
     gate: Gate,
     seconds: u64,
     log_sha256: String,
+    /// The tests gate's counts, which the release-tag check requires.
+    tests: Option<TestCounts>,
+    /// What the smoke gate saw.
+    checks: Vec<String>,
+}
+
+/// cargo-nextest's counts for one run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TestCounts {
+    pub binaries: u64,
+    pub passed: u64,
+    pub failed: u64,
+    pub skipped: u64,
 }
 
 fn words(argv: &[&str]) -> Vec<String> {
@@ -77,6 +91,17 @@ pub fn gates() -> Vec<Gate> {
     };
     vec![
         plain("format", &["cargo", "fmt", "--all", "--check"]),
+        plain(
+            "check",
+            &[
+                "cargo",
+                "check",
+                "--workspace",
+                "--all-targets",
+                "--offline",
+                "--locked",
+            ],
+        ),
         plain(
             "clippy",
             &[
@@ -273,11 +298,14 @@ fn run_gate(root: &Path, logs: &Path, gate: Gate) -> Result<Passed, String> {
         gate,
         seconds,
         log_sha256,
+        tests: None,
+        checks: Vec::new(),
     })
 }
 
-/// `(passed, failed, skipped)` from cargo-nextest's summary line.
-pub fn nextest_counts(log: &str) -> Option<(u64, u64, u64)> {
+/// The counts from cargo-nextest's output: binaries from its start line, the rest from its
+/// summary line.
+pub fn nextest_counts(log: &str) -> Option<TestCounts> {
     let line = log.lines().rev().find(|l| l.contains("tests run:"))?;
     let after = line.split("tests run:").nth(1)?;
     let count = |word: &str| {
@@ -286,7 +314,24 @@ pub fn nextest_counts(log: &str) -> Option<(u64, u64, u64)> {
             .find_map(|part| part.trim().strip_suffix(word)?.trim().parse::<u64>().ok())
             .unwrap_or(0)
     };
-    Some((count("passed"), count("failed"), count("skipped")))
+    let binaries = log
+        .lines()
+        .filter(|l| l.contains("Starting") && l.contains(" across "))
+        .find_map(|l| {
+            l.split(" across ")
+                .nth(1)?
+                .split_whitespace()
+                .next()?
+                .parse()
+                .ok()
+        })
+        .unwrap_or(0);
+    Some(TestCounts {
+        binaries,
+        passed: count("passed"),
+        failed: count("failed"),
+        skipped: count("skipped"),
+    })
 }
 
 fn http(port: u16, request: &str) -> Result<(u16, String), String> {
@@ -466,9 +511,10 @@ pub fn smoke(program: &Path, version: &str, scratch: &Path) -> Result<Vec<String
 #[allow(clippy::too_many_arguments)]
 pub fn release_record(
     plan: &Plan,
+    tag_commit: &str,
     tagged: &str,
     asset_sha256: &str,
-    tests: (u64, u64, u64),
+    tests: TestCounts,
     gate_names: &[&str],
     qualification_sha256: &str,
     tool_version: &str,
@@ -483,11 +529,17 @@ pub fn release_record(
         .map(|g| quote(g))
         .collect::<Vec<_>>()
         .join(", ");
-    let (passed, failed, skipped) = tests;
+    let TestCounts {
+        binaries,
+        passed,
+        failed,
+        skipped,
+    } = tests;
     let v = &plan.version;
     let tag = &plan.tag;
-    let commit = &plan.commit;
-    let short = &commit[..12];
+    let qualified = &plan.commit;
+    let short = &qualified[..12];
+    let tagged_short = &tag_commit[..12];
     let tree = &plan.tree[..12];
     let lines = [
         "{".to_owned(),
@@ -495,7 +547,7 @@ pub fn release_record(
         r#"  "product": "susi","#.to_owned(),
         format!(r#"  "version": "{v}","#),
         format!(r#"  "tag": "{tag}","#),
-        format!(r#"  "commit": "{commit}","#),
+        format!(r#"  "commit": "{tag_commit}","#),
         format!(r#"  "tagged": "{tagged}","#),
         r#"  "build": {"#.to_owned(),
         format!(r#"    "toolchain": "{}","#, plan.channel),
@@ -503,7 +555,7 @@ pub fn release_record(
         format!(
             "    \"source\": {},",
             quote(&format!(
-                "the build gate of susi-tools release qualify on the qualified tree {tree} (commit {short}, which the tag names)"
+                "the build gate of susi-tools release qualify on the qualified tree {tree} (commit {short}; the tagged commit {tagged_short} adds only releases/qualification/{tag}.json)"
             ))
         ),
         format!(r#"    "profile": "{PROFILE}","#),
@@ -524,15 +576,15 @@ pub fn release_record(
         "  ],".to_owned(),
         r#"  "checks": {"#.to_owned(),
         format!(r#"    "qualification_record": "releases/qualification/{tag}.json","#),
-        format!(r#"    "release_qualify": {{ "gates": [{gates}, "smoke"], "all_exit_0": true }},"#),
+        format!(r#"    "release_qualify": {{ "gates": [{gates}], "all_exit_0": true }},"#),
         format!(
-            r#"    "workspace_tests": {{ "passed": {passed}, "failed": {failed}, "skipped": {skipped} }},"#
+            r#"    "workspace_tests": {{ "binaries": {binaries}, "passed": {passed}, "failed": {failed}, "skipped": {skipped} }},"#
         ),
         r#"    "locally_qualified": true,"#.to_owned(),
         format!(
             "    \"qualification_note\": {}",
             quote(&format!(
-                "qualified on {LINUX} with susi-tools {tool_version} release qualify {tag} on commit {commit} (tree {}); every gate exited 0, {passed} tests passed and {failed} failed ({skipped} skipped), and the smoke run of the built program passed",
+                "qualified on {LINUX} with susi-tools {tool_version} release qualify {tag} on commit {qualified} (tree {}); every gate exited 0, {passed} tests passed across {binaries} binaries and {failed} failed ({skipped} skipped), and the smoke run of the built program passed",
                 plan.tree
             ))
         ),
@@ -541,7 +593,7 @@ pub fn release_record(
         format!(
             "    {},",
             quote(&format!(
-                "commit and tagged time: the annotated tag {tag} on {short}; once published: git cat-file -p {tag}"
+                "commit and tagged time: the annotated tag {tag} on {tagged_short}, which adds only its qualification record to {short}; once published: git cat-file -p {tag}"
             ))
         ),
         format!(
@@ -566,6 +618,15 @@ fn number(n: u64) -> Json {
     Json::Number(n.to_string())
 }
 
+fn counts(t: TestCounts) -> Json {
+    Json::Object(vec![
+        ("binaries".into(), number(t.binaries)),
+        ("passed".into(), number(t.passed)),
+        ("failed".into(), number(t.failed)),
+        ("skipped".into(), number(t.skipped)),
+    ])
+}
+
 /// `releases/qualification/<tag>.json`: every gate, its command, time and log digest.
 // A record states this many separate facts; a struct built for this one call would only rename them.
 #[allow(clippy::too_many_arguments)]
@@ -574,9 +635,8 @@ pub fn qualification_record(
     rustc: &str,
     lock_sha256: &str,
     passed: &[Passed],
-    tests: (u64, u64, u64),
+    tests: TestCounts,
     asset: (&str, u64, &str),
-    smoke: &[String],
     started: i64,
     finished: i64,
     tool_version: &str,
@@ -584,7 +644,7 @@ pub fn qualification_record(
     let gates = passed
         .iter()
         .map(|p| {
-            Json::Object(vec![
+            let mut fields = vec![
                 ("name".into(), text(p.gate.name)),
                 (
                     "argv".into(),
@@ -603,7 +663,17 @@ pub fn qualification_record(
                 ("exit_code".into(), number(0)),
                 ("duration_s".into(), number(p.seconds)),
                 ("log_sha256".into(), text(&p.log_sha256)),
-            ])
+            ];
+            if let Some(t) = p.tests {
+                fields.push(("tests".into(), counts(t)));
+            }
+            if !p.checks.is_empty() {
+                fields.push((
+                    "checks".into(),
+                    Json::Array(p.checks.iter().map(|c| text(c)).collect()),
+                ));
+            }
+            Json::Object(fields)
         })
         .collect();
     let (sha, bytes, answer) = asset;
@@ -625,14 +695,7 @@ pub fn qualification_record(
         ),
         ("host".into(), text(LINUX)),
         ("gates".into(), Json::Array(gates)),
-        (
-            "tests".into(),
-            Json::Object(vec![
-                ("passed".into(), number(tests.0)),
-                ("failed".into(), number(tests.1)),
-                ("skipped".into(), number(tests.2)),
-            ]),
-        ),
+        ("tests".into(), counts(tests)),
         (
             "assets".into(),
             Json::Array(vec![Json::Object(vec![
@@ -641,10 +704,6 @@ pub fn qualification_record(
                 ("sha256".into(), text(sha)),
                 ("version_output".into(), text(answer)),
             ])]),
-        ),
-        (
-            "smoke".into(),
-            Json::Array(smoke.iter().map(|s| text(s)).collect()),
         ),
         ("owed_platforms".into(), text("")),
         ("started_unix".into(), Json::Number(started.to_string())),
@@ -661,16 +720,19 @@ pub fn qualification_record(
     out
 }
 
-/// What `qualify` made: the tag (not yet published) and the commit carrying its records.
+/// What `qualify` made, none of it published: the qualified commit (A), the tagged commit that
+/// adds its qualification record (B) and the commit adding the release record (C).
 pub struct Qualified {
     pub tag: String,
     pub commit: String,
+    pub tag_commit: String,
     pub records_commit: String,
-    pub tests: (u64, u64, u64),
+    pub tests: TestCounts,
     pub seconds: u64,
 }
 
-/// Run every gate and the smoke run on `main`'s commit, then tag it and commit its records.
+/// Run every gate and the smoke run on `main`'s commit; then commit the qualification record, tag
+/// that commit and commit the release record naming it.
 pub fn qualify(
     repo: &Repo,
     remote: &str,
@@ -688,22 +750,53 @@ pub fn qualify(
     std::fs::create_dir_all(&work).map_err(|e| format!("cannot create {}: {e}", work.display()))?;
     let mut passed = Vec::new();
     for gate in gates() {
-        passed.push(run_gate(&plan.root, &work, gate)?);
+        let mut done = run_gate(&plan.root, &work, gate)?;
+        if done.gate.name == "tests" {
+            let counts = nextest_counts(&read(&work.join("tests.log"))?)
+                .ok_or("the tests gate printed no nextest summary")?;
+            if counts.binaries == 0 || counts.passed == 0 || counts.failed != 0 {
+                return Err(format!(
+                    "the tests gate ran {} tests in {} binaries with {} failed: a release needs executed tests and no failure",
+                    counts.passed, counts.binaries, counts.failed
+                ));
+            }
+            done.tests = Some(counts);
+        }
+        passed.push(done);
     }
-    let tests_log = read(&work.join("tests.log"))?;
-    let tests = nextest_counts(&tests_log).ok_or("the tests gate printed no nextest summary")?;
-    if tests.1 != 0 || tests.0 == 0 {
-        return Err(format!(
-            "the tests gate reports {} passed and {} failed: a release needs executed tests and no failure",
-            tests.0, tests.1
-        ));
-    }
+    let tests = passed
+        .iter()
+        .find_map(|p| p.tests)
+        .ok_or("the tests gate did not run")?;
     let program = target_dir(&plan.root).join(PROFILE).join("susi");
-    println!("smoke: {}", program.display());
-    let smoke = smoke(&program, &plan.version, &work.join("smoke"))?;
-    for line in &smoke {
+    println!("gate smoke: {}", program.display());
+    let smoke_clock = Instant::now();
+    let seen = smoke(&program, &plan.version, &work.join("smoke"))?;
+    for line in &seen {
         println!("smoke: {line}");
     }
+    let smoke_log = work.join("smoke.log");
+    let mut smoke_text = seen.join("\n");
+    smoke_text.push('\n');
+    std::fs::write(&smoke_log, smoke_text)
+        .map_err(|e| format!("cannot write {}: {e}", smoke_log.display()))?;
+    let (smoke_sha, _) = sha256::of_file(&smoke_log)?;
+    passed.push(Passed {
+        gate: Gate {
+            name: "smoke",
+            argv: vec![
+                "susi-tools".into(),
+                "release".into(),
+                "smoke".into(),
+                program.display().to_string(),
+            ],
+            env: Vec::new(),
+        },
+        seconds: smoke_clock.elapsed().as_secs(),
+        log_sha256: smoke_sha,
+        tests: None,
+        checks: seen,
+    });
     let (asset_sha, bytes) = sha256::of_file(&program)?;
     let (lock_sha, _) = sha256::of_file(&plan.root.join("Cargo.lock"))?;
     let rustc = Command::new("rustc")
@@ -720,35 +813,77 @@ pub fn qualify(
         &passed,
         tests,
         (&asset_sha, bytes, &format!("susi {}", plan.version)),
-        &smoke,
         started,
         crate::time::now_unix(),
         tool,
     );
-
+    let record_rel = format!("releases/{}.json", plan.tag);
+    let qualification_rel = format!("releases/qualification/{}.json", plan.tag);
+    // The checkout was clean at A (`plan` refused otherwise) and only these two files change, so
+    // a failure goes back to exactly A.
+    let undo = |why: String| -> String {
+        let _ = repo.read(&["tag", "-d", &plan.tag]);
+        let _ = repo.read(&["reset", "-q", "--hard", &plan.commit]);
+        let _ = std::fs::remove_file(plan.root.join(&record_rel));
+        let _ = std::fs::remove_file(plan.root.join(&qualification_rel));
+        format!("{why}; the tag and the release commits were removed again, nothing was published")
+    };
+    let write = |rel: &str, body: &str| {
+        let path = plan.root.join(rel);
+        std::fs::write(&path, body).map_err(|e| format!("cannot write {}: {e}", path.display()))
+    };
+    let commit = |rel: &str, subject: String, body: String| {
+        repo.read(&["add", "--", rel])?;
+        repo.run_visible(&[
+            "commit",
+            "-m",
+            &subject,
+            "-m",
+            &body,
+            "-m",
+            &format!("Task: {task}"),
+        ])
+    };
+    write(&qualification_rel, &qualification)
+        .and_then(|()| {
+            commit(
+                &qualification_rel,
+                format!("release: qualify {}", plan.tag),
+                format!(
+                    "Every gate and the smoke run passed on {} ({} tests passed across {} binaries, {} failed). This commit adds only the qualification record, and the tag names it.",
+                    &plan.commit[..12],
+                    tests.passed,
+                    tests.binaries,
+                    tests.failed
+                ),
+            )
+        })
+        .map_err(&undo)?;
+    let tag_commit = repo
+        .read(&["rev-parse", "HEAD"])
+        .map(|s| s.trim().to_owned())
+        .map_err(&undo)?;
     let message = format!(
         "Susi Core {}\n\nQualified on {LINUX} by susi-tools release qualify: every gate and the smoke run passed on commit {}.",
         plan.version, plan.commit
     );
     let flag = if sign { "-s" } else { "-a" };
-    repo.run_visible(&["tag", flag, "-m", &message, &plan.tag, &plan.commit])?;
-    let undo_tag = || {
-        let _ = repo.read(&["tag", "-d", &plan.tag]);
-    };
-    let tagged = match repo.read(&[
-        "for-each-ref",
-        "--format=%(taggerdate:iso-strict)",
-        &format!("refs/tags/{}", plan.tag),
-    ]) {
-        Ok(t) if !t.trim().is_empty() => t.trim().to_owned(),
-        _ => {
-            undo_tag();
-            return Err(format!("{} has no tagger date", plan.tag));
-        }
-    };
+    repo.run_visible(&["tag", flag, "-m", &message, &plan.tag, &tag_commit])
+        .map_err(&undo)?;
+    let tagged = repo
+        .read(&[
+            "for-each-ref",
+            "--format=%(taggerdate:iso-strict)",
+            &format!("refs/tags/{}", plan.tag),
+        ])
+        .map(|t| t.trim().to_owned())
+        .ok()
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| undo(format!("{} has no tagger date", plan.tag)))?;
     let names: Vec<&str> = passed.iter().map(|p| p.gate.name).collect();
     let record = release_record(
         &plan,
+        &tag_commit,
         &tagged,
         &asset_sha,
         tests,
@@ -756,45 +891,24 @@ pub fn qualify(
         &sha256::of(qualification.as_bytes()),
         tool,
     );
-    let record_rel = format!("releases/{}.json", plan.tag);
-    let qualification_rel = format!("releases/qualification/{}.json", plan.tag);
-    let write = |rel: &str, body: &str| {
-        let path = plan.root.join(rel);
-        std::fs::write(&path, body).map_err(|e| format!("cannot write {}: {e}", path.display()))
-    };
-    let committed = write(&qualification_rel, &qualification)
-        .and_then(|()| write(&record_rel, &record))
-        .and_then(|()| repo.read(&["add", "--", &record_rel, &qualification_rel]).map(|_| ()))
+    write(&record_rel, &record)
         .and_then(|()| {
-            repo.run_visible(&[
-                "commit",
-                "-m",
-                &format!("release: {}", plan.tag),
-                "-m",
-                &format!(
-                    "The release and qualification records of {}, which names {}: every gate and the smoke run passed on that exact commit ({} tests passed, {} failed).",
+            commit(
+                &record_rel,
+                format!("release: record {}", plan.tag),
+                format!(
+                    "The release record of {}, which names the tagged commit {}.",
                     plan.tag,
-                    &plan.commit[..12],
-                    tests.0,
-                    tests.1
+                    &tag_commit[..12]
                 ),
-                "-m",
-                &format!("Task: {task}"),
-            ])
-        });
-    if let Err(why) = committed {
-        undo_tag();
-        let _ = repo.read(&["reset", "-q", "--", &record_rel, &qualification_rel]);
-        let _ = std::fs::remove_file(plan.root.join(&record_rel));
-        let _ = std::fs::remove_file(plan.root.join(&qualification_rel));
-        return Err(format!(
-            "{why}; the tag and the records were removed again, nothing was published"
-        ));
-    }
+            )
+        })
+        .map_err(&undo)?;
     let records_commit = repo.read(&["rev-parse", "HEAD"])?.trim().to_owned();
     Ok(Qualified {
-        tag: plan.tag,
-        commit: plan.commit,
+        tag: plan.tag.clone(),
+        commit: plan.commit.clone(),
+        tag_commit,
         records_commit,
         tests,
         seconds: clock.elapsed().as_secs(),
@@ -904,28 +1018,50 @@ mod tests {
 
     #[test]
     fn nextest_summaries_give_their_counts() {
-        let log = "   Compiling x\n     Summary [  13.401s] 460 tests run: 460 passed, 1 skipped\n";
-        assert_eq!(nextest_counts(log), Some((460, 0, 1)));
+        let log = "    Starting 381 tests across 41 binaries (1 test skipped)\n     Summary [  13.401s] 380 tests run: 380 passed, 1 skipped\n";
+        let counts = nextest_counts(log).unwrap();
+        assert_eq!(
+            counts,
+            TestCounts {
+                binaries: 41,
+                passed: 380,
+                failed: 0,
+                skipped: 1
+            }
+        );
         let failing = "     Summary [   2.000s] 10 tests run: 8 passed, 2 failed, 3 skipped\n";
-        assert_eq!(nextest_counts(failing), Some((8, 2, 3)));
+        let counts = nextest_counts(failing).unwrap();
+        assert_eq!((counts.passed, counts.failed, counts.skipped), (8, 2, 3));
+        assert_eq!(counts.binaries, 0, "no start line, no binaries counted");
         assert_eq!(nextest_counts("no summary here"), None);
     }
 
     #[test]
     fn the_release_record_keeps_the_line_layout_the_installer_reads() {
         let sha = "a".repeat(64);
+        let tagged = "fedcba9876543210fedcba9876543210fedcba98";
         let record = release_record(
             &plan(),
+            tagged,
             "2026-11-22T14:00:00+05:30",
             &sha,
-            (390, 0, 14),
-            &["format", "tests", "build"],
+            TestCounts {
+                binaries: 41,
+                passed: 390,
+                failed: 0,
+                skipped: 14,
+            },
+            &["format", "tests", "build", "smoke"],
             &"b".repeat(64),
             "0.2.0",
         );
         let parsed = crate::json::parse(&record).unwrap();
         assert_eq!(parsed.text("tag"), "v0.21.72");
-        assert_eq!(parsed.text("commit"), plan().commit);
+        assert_eq!(
+            parsed.text("commit"),
+            tagged,
+            "the record names the tagged commit, which the installer checks out"
+        );
         for field in [
             "version",
             "tag",
@@ -960,24 +1096,44 @@ mod tests {
     }
 
     #[test]
-    fn the_qualification_record_names_its_tag_and_every_gate() {
-        let passed = vec![Passed {
-            gate: Gate {
-                name: "format",
-                argv: words(&["cargo", "fmt", "--all", "--check"]),
-                env: Vec::new(),
+    fn the_qualification_record_carries_what_the_release_tag_check_reads() {
+        let counts = TestCounts {
+            binaries: 41,
+            passed: 390,
+            failed: 0,
+            skipped: 14,
+        };
+        let gate = |name, argv: &[&str]| Gate {
+            name,
+            argv: words(argv),
+            env: Vec::new(),
+        };
+        let passed = vec![
+            Passed {
+                gate: gate("tests", &["cargo", "nextest", "run"]),
+                seconds: 7,
+                log_sha256: "c".repeat(64),
+                tests: Some(counts),
+                checks: Vec::new(),
             },
-            seconds: 2,
-            log_sha256: "c".repeat(64),
-        }];
+            Passed {
+                gate: gate(
+                    "smoke",
+                    &["susi-tools", "release", "smoke", "target/dist/susi"],
+                ),
+                seconds: 1,
+                log_sha256: "f".repeat(64),
+                tests: None,
+                checks: vec!["--version answered susi 0.21.72".into()],
+            },
+        ];
         let text = qualification_record(
             &plan(),
             "rustc 1.99.0",
             &"d".repeat(64),
             &passed,
-            (390, 0, 14),
+            counts,
             (&"e".repeat(64), 1234, "susi 0.21.72"),
-            &["--version answered susi 0.21.72".into()],
             1,
             2,
             "0.2.0",
@@ -987,7 +1143,21 @@ mod tests {
         assert_eq!(parsed.text("tag"), "v0.21.72");
         assert_eq!(parsed.text("source"), "snapshot");
         assert_eq!(parsed.text("qualified_commit"), plan().commit);
-        assert!(text.contains("\"log_sha256\": \"cccc"));
+        assert_eq!(parsed.text("qualified_tree"), plan().tree);
+        let Some(crate::json::Json::Array(gates)) = parsed.get("gates") else {
+            panic!("no gates");
+        };
+        let tests = gates
+            .iter()
+            .find(|g| g.text("name") == "tests")
+            .and_then(|g| g.get("tests"))
+            .expect("the tests gate carries its counts");
+        assert_eq!(tests.text("binaries"), "41");
+        assert_eq!(tests.text("failed"), "0");
+        let smoke = gates.iter().find(|g| g.text("name") == "smoke").unwrap();
+        assert_eq!(smoke.text("exit_code"), "0");
+        assert!(!smoke.str_list("argv").is_empty());
+        assert!(text.contains("\"version_output\": \"susi 0.21.72\""));
     }
 
     #[test]
@@ -995,7 +1165,7 @@ mod tests {
         let names: Vec<&str> = gates().iter().map(|g| g.name).collect();
         assert_eq!(
             names,
-            ["format", "clippy", "licenses", "tests", "doctests", "build"]
+            ["format", "check", "clippy", "licenses", "tests", "doctests", "build"]
         );
         let build = gates().pop().unwrap();
         assert_eq!(build.argv.join(" "), BUILD.join(" "));
