@@ -241,7 +241,13 @@ pub fn claim(repo: &Repo, remote: &str, req: &Request<'_>) -> Result<Claim, Stri
             task: req.task.to_owned(),
             agent: token.clone(),
             claimed_unix,
-            lease_until_unix: now + req.hours * 3600,
+            // Renewing never shortens a lease this agent already holds.
+            lease_until_unix: match current {
+                Some((_, _, held)) if held.agent == token && held.live(now) => {
+                    held.lease_until_unix.max(now + req.hours * 3600)
+                }
+                _ => now + req.hours * 3600,
+            },
         };
         let oid = repo.write_blob(&claim.render())?;
         let updates = vec![

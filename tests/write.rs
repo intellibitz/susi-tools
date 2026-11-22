@@ -789,3 +789,29 @@ fn work_in_a_public_repository_posts_to_the_agent_roots_susi_board() {
     let item = fx.origin_blob("refs/board/items/1");
     assert!(item.contains("Claimed T-C-1"), "{item}");
 }
+
+#[test]
+fn renewing_never_shortens_a_longer_lease() {
+    let fx = Fx::new("longlease");
+    fx.ok(
+        "alpha",
+        &["tasks", "claim", "T-A-1", "--scope", "src", "--hours", "3"],
+    );
+    let lease = |fx: &Fx| {
+        let claim = fx.origin_blob("refs/claims/T-A-1");
+        claim
+            .split("\"lease_until_unix\":")
+            .nth(1)
+            .unwrap()
+            .trim_end_matches('}')
+            .parse::<i64>()
+            .unwrap()
+    };
+    let long = lease(&fx);
+    fx.ok("alpha", &["tasks", "renew"]);
+    assert_eq!(
+        lease(&fx),
+        long,
+        "a one-hour renewal shortened a three-hour lease"
+    );
+}

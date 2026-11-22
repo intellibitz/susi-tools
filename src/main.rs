@@ -210,7 +210,7 @@ fn read_body(o: &Options) -> Result<String, Failure> {
 
 fn post_line(repo: &git::Repo, remote: &str, post: &board::Post<'_>) -> Result<(), Failure> {
     let (n, _) = board::post(repo, remote, post)?;
-    println!("posted item {n} on {remote}: {} {}", post.kind, post.title);
+    println!("posted item {n} on the Board: {} {}", post.kind, post.title);
     Ok(())
 }
 
