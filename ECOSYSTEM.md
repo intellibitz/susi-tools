@@ -1,8 +1,8 @@
 # The Susi AI OS ecosystem
 
-This page is the same, byte for byte, in all three repositories of the Susi AI
-OS ecosystem. A test in Susi and in Susi Core holds each copy to the same
-fingerprint, so the page changes in all three at once or not at all.
+This page is kept here, in Susi Tools, for all three repositories of the Susi
+AI OS ecosystem; Susi and Susi Core point to it. Until 2026-11-22 each
+repository kept a copy.
 
 ## Three repositories
 
@@ -15,7 +15,8 @@ fingerprint, so the page changes in all three at once or not at all.
 ## How they relate
 
 - **One direction.** Dependencies flow only from Susi to Susi Core and Susi
-  Tools. Neither public repository needs the product to build or run.
+  Tools. Neither public repository needs the product, and neither needs the
+  other: Susi is built with Susi Tools and may run on Susi Core.
 - **Nothing secret in public.** Susi Core and Susi Tools carry no credential,
   key, licence material, private record or proprietary source, in any file or
   in their history.
@@ -53,6 +54,10 @@ Not finished, said plainly:
 
 - **The program names.** Susi Core's program is still called `susi` and
   Susi's is still called `susi-commercial`; they are renamed in a second step.
+- **Susi Core does not run on its own yet.** Its program lists 61 commands;
+  all but `help` and `install` hand the work to a runtime that was part of
+  Susi and was removed on 2026-11-22. A small runtime that starts on its own is
+  being built, and the commands that do nothing go.
 - **Susi is being rebuilt.** Since 2026-11-22 Susi holds only its licence and
   vault core. Its applications are being rebuilt, so a capability Susi Core
   points to the product for has no implementation there today.

@@ -11,14 +11,15 @@ move together:
   testing and releasing Susi. Nothing here ships inside a production program.
 
 How the three repositories fit together, and what is finished and what is
-not: [`ECOSYSTEM.md`](ECOSYSTEM.md), the same page in all three.
+not: [`ECOSYSTEM.md`](ECOSYSTEM.md). The page lives here, and Susi and Susi Core
+point to it.
 
 ## Rules of this repository
 
 - **Apache-2.0, and nothing secret.** No credentials, keys, licence material or
   private records, in any file or in the history.
-- **It stands on Susi Core alone.** It never depends on the private product, so
-  anyone can build it.
+- **It stands alone.** It depends on neither the private product nor Susi Core
+  (decided 2026-11-22), so anyone can build and use it.
 - **Development code and production code stay apart.** A production program
   never contains development tooling; the tooling lives here.
 - **No dependency on a hosting service.** Git is the only transport. Hosted
