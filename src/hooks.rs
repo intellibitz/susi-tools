@@ -392,9 +392,14 @@ pub fn reuse_gap(record: &Json) -> Option<&'static str> {
 }
 
 /// Refuse a commit for a task whose record in this checkout owes a reuse decision. A task with
-/// no record here (another repository's queue, or closed) has nothing to check.
+/// no record here (another repository's queue, or closed) has nothing to check, and neither has
+/// a commit that changes only task records (`tasks start` commits a new record before its agent
+/// has looked; no code lands with it), as Susi Core's hook already exempts.
 pub fn reuse(work: &Path, tasks: &[String]) -> Result<(), Stop> {
     if allowed("SUSI_ALLOW_NO_REUSE") {
+        return Ok(());
+    }
+    if only_task_records_staged(work) {
         return Ok(());
     }
     for id in tasks {
@@ -412,6 +417,18 @@ pub fn reuse(work: &Path, tasks: &[String]) -> Result<(), Stop> {
         }
     }
     Ok(())
+}
+
+/// Whether the staged change touches nothing but task records.
+fn only_task_records_staged(work: &Path) -> bool {
+    let Ok(repo) = Repo::open(work) else {
+        return false;
+    };
+    let Some(staged) = repo.try_read(&["diff", "--cached", "--name-only"]) else {
+        return false;
+    };
+    let paths: Vec<&str> = staged.lines().filter(|l| !l.trim().is_empty()).collect();
+    !paths.is_empty() && paths.iter().all(|p| p.starts_with(".agents/tasks/"))
 }
 
 /// Whether `repo` is a primary checkout: its git directory is the common one, so it is not a

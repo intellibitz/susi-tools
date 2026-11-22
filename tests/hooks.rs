@@ -258,6 +258,31 @@ fn reuse_refuses_a_sized_task_that_states_no_reuse_decision() {
     );
     assert!(stated.status.success(), "{}", err(&stated));
 
+    // A commit that only adds the record (what `tasks start` makes) owes nothing yet.
+    std::fs::write(
+        tasks.join("T-A-1.json"),
+        r#"{"id":"T-A-1","size":"m","created_unix":1795000000}"#,
+    )
+    .unwrap();
+    fx.git(&fx.work(), &["add", ".agents/tasks/T-A-1.json"]);
+    let record_only = fx.run(
+        &fx.work(),
+        None,
+        &["workflow", "reuse", "--message-file", msg],
+    );
+    assert!(record_only.status.success(), "{}", err(&record_only));
+    std::fs::write(fx.work().join("code.rs"), "// code\n").unwrap();
+    fx.git(&fx.work(), &["add", "code.rs"]);
+    let with_code = fx.run(
+        &fx.work(),
+        None,
+        &["workflow", "reuse", "--message-file", msg],
+    );
+    assert!(
+        !with_code.status.success(),
+        "code with no reuse decision is refused"
+    );
+
     std::fs::write(&message, "feat: another\n\nTask: T-B-9\n").unwrap();
     let elsewhere = fx.run(
         &fx.work(),
