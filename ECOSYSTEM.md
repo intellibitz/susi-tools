@@ -59,6 +59,7 @@ Not finished, said plainly:
   low-level parts (Susi's Windows start-up code and Susi Core's
   standard-library builder) are checked only against Rust 1.99.0 and must be
   re-checked before the compiler moves.
-- **CachyOS.** The Linux side of the dual-boot setup renames itself to the new
-  names on its next run; that was tested in a Linux copy, not yet on the real
-  host.
+- **CachyOS.** The Linux side of the dual-boot setup needs the new sync script
+  run there once, by hand; it then renames the old layout to the new names and
+  imports. Until then the old script there stops at the new format without
+  changing anything. Tested in a Linux copy, not yet on the real host.
