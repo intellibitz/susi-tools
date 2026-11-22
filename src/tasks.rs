@@ -16,15 +16,10 @@ pub struct OpenTask {
     pub live: bool,
 }
 
-/// Bring the remote's `main` into this program's own ref and return that ref's name.
+/// Bring the remote's `main` into this program's own ref and return that ref's name. The same
+/// fetch brings the claims, so a claim read later in the same run needs no fetch of its own.
 pub fn fetch_main(repo: &Repo, remote: &str) -> Result<String, String> {
-    repo.read(&[
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        remote,
-        &format!("+refs/heads/main:{MAIN_SNAPSHOT}"),
-    ])?;
+    crate::claims::fetch(repo, remote)?;
     Ok(MAIN_SNAPSHOT.to_owned())
 }
 

@@ -10,6 +10,11 @@ use std::process::{Command, Stdio};
 pub struct Repo {
     git_dir: PathBuf,
     work_tree: Option<PathBuf>,
+    /// Fetches this run already made, by remote and refspecs. A command that reads the same
+    /// remote again (a ship, then its claim's renewal, then the claim it re-makes) reuses the
+    /// first fetch instead of starting git and its transport again; any push of this program's
+    /// own clears them, so a lease is never taken from a view older than that push.
+    fetched: std::cell::RefCell<std::collections::HashSet<String>>,
 }
 
 /// One ref change in an atomic push. `new: None` deletes the ref. `expect` is the value the ref
@@ -60,6 +65,7 @@ impl Repo {
         Ok(Repo {
             git_dir: PathBuf::from(git_dir),
             work_tree,
+            fetched: Default::default(),
         })
     }
 
@@ -94,6 +100,19 @@ impl Repo {
         }
         String::from_utf8(out.stdout)
             .map_err(|e| format!("git {} printed non-UTF-8: {e}", args.join(" ")))
+    }
+
+    /// `git fetch --quiet <args>` once per run for the same arguments (see `fetched`).
+    pub fn fetch_once(&self, args: &[&str]) -> Result<(), String> {
+        let key = args.join("\u{1f}");
+        if self.fetched.borrow().contains(&key) {
+            return Ok(());
+        }
+        let mut full = vec!["fetch", "--quiet"];
+        full.extend_from_slice(args);
+        self.read(&full)?;
+        self.fetched.borrow_mut().insert(key);
+        Ok(())
     }
 
     /// Like `read`, but a failure is `None` rather than an error.
@@ -180,6 +199,8 @@ impl Repo {
             args.push(format!("{}:{}", u.new.as_deref().unwrap_or(""), u.refname));
         }
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        // Whatever the push does, the remote may differ from what this run fetched.
+        self.fetched.borrow_mut().clear();
         let out = self
             .command()
             .args(&refs)

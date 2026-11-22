@@ -66,6 +66,20 @@ impl Claim {
     }
 }
 
+/// One fetch of the remote's `main` and every claim ref into this program's own namespace,
+/// made once per run (`Repo::fetch_once`) until this program pushes.
+pub fn fetch(repo: &Repo, remote: &str) -> Result<(), String> {
+    repo.fetch_once(&[
+        "--no-tags",
+        "--prune",
+        remote,
+        &format!("+refs/heads/main:{}", tasks::MAIN_SNAPSHOT),
+        "+refs/claims/*:refs/susi-tools/remote/claims/*",
+        "+refs/claim-agents/*:refs/susi-tools/remote/claim-agents/*",
+        "+refs/claim-generation/*:refs/susi-tools/remote/claim-generation/*",
+    ])
+}
+
 /// What the remote holds right now: every claim ref with its object id and claim.
 pub struct State {
     pub claims: Vec<(String, String, Claim)>,
@@ -78,17 +92,7 @@ impl State {
     /// namespace; the leases below are the values that fetch saw, so a change made by anyone
     /// since then refuses the push instead of being overwritten.
     pub fn read(repo: &Repo, remote: &str) -> Result<State, String> {
-        repo.read(&[
-            "fetch",
-            "--quiet",
-            "--no-tags",
-            "--prune",
-            remote,
-            &format!("+refs/heads/main:{}", tasks::MAIN_SNAPSHOT),
-            "+refs/claims/*:refs/susi-tools/remote/claims/*",
-            "+refs/claim-agents/*:refs/susi-tools/remote/claim-agents/*",
-            "+refs/claim-generation/*:refs/susi-tools/remote/claim-generation/*",
-        ])?;
+        fetch(repo, remote)?;
         let refs = repo.refs("refs/susi-tools/remote/")?;
         let wanted: Vec<(String, String)> = refs
             .iter()

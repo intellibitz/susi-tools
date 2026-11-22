@@ -21,18 +21,20 @@ pub fn ship(repo: &Repo, remote: &str) -> Result<Shipped, String> {
         return Err("commit or set aside your changes first: only committed work ships".into());
     }
     let main = crate::tasks::fetch_main(repo, remote)?;
-    let head = repo.read(&["rev-parse", "HEAD"])?.trim().to_owned();
-    let tip = repo.read(&["rev-parse", &main])?.trim().to_owned();
-    if repo
-        .try_read(&["merge-base", "--is-ancestor", &head, &tip])
-        .is_some()
-    {
+    // HEAD and the remote's main from one `rev-parse`, and where they meet from one `merge-base`:
+    // HEAD already on main, a fast-forward, or main moved on.
+    let ids = repo.read(&["rev-parse", "HEAD", &main])?;
+    let mut ids = ids.lines().map(str::trim);
+    let (Some(head), Some(tip)) = (ids.next(), ids.next()) else {
+        return Err("git rev-parse did not name HEAD and main".into());
+    };
+    let (head, tip) = (head.to_owned(), tip.to_owned());
+    let base = repo.read(&["merge-base", &head, &tip]).unwrap_or_default();
+    let base = base.trim();
+    if base == head {
         return Ok(Shipped::Nothing(tip));
     }
-    if repo
-        .try_read(&["merge-base", "--is-ancestor", &tip, &head])
-        .is_none()
-    {
+    if base != tip {
         return Err(format!(
             "{remote}'s main has moved on: run `git merge {main}` (resolve, commit), then ship again"
         ));

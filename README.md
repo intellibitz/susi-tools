@@ -95,7 +95,12 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     for every test process and run (until 2026-11-22 each test process built its own and left it
     in the temporary folder) and run no background `git maintenance`: 58 -> 50 s. The rest is the
     git work of the `susi-tools` commands these tests drive (about 9 s for one test alone,
-    40-50 s when all run side by side). Next: fewer git processes inside those commands.
+    40-50 s when all run side by side). Since 2026-11-22 a run fetches a remote once and reuses
+    that view until it pushes (a landing ship fetched four times), and ship asks git for HEAD,
+    main and where they meet in two calls instead of four: the suite 50 -> 48 s, `workflow
+    check` on Susi 3.7-4.3 -> 2.9-3.5 s, an empty ship 1.3 -> 1.1 s. The suite stays far over
+    the line on Windows while each process start costs 100 ms or more there; on Linux it takes
+    about 2 s.
   - **Installed since 2026-11-22**, in place of the earlier program, on the
     Windows development host (`~/.cargo/bin/susi-tools`). The earlier program
     stays installed beside it as `susi-tools-legacy`: any command this one does
