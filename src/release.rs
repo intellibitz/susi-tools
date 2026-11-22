@@ -858,18 +858,18 @@ pub fn qualify(
                 ),
             )
         })
-        .map_err(&undo)?;
+        .map_err(undo)?;
     let tag_commit = repo
         .read(&["rev-parse", "HEAD"])
         .map(|s| s.trim().to_owned())
-        .map_err(&undo)?;
+        .map_err(undo)?;
     let message = format!(
         "Susi Core {}\n\nQualified on {LINUX} by susi-tools release qualify: every gate and the smoke run passed on commit {}.",
         plan.version, plan.commit
     );
     let flag = if sign { "-s" } else { "-a" };
     repo.run_visible(&["tag", flag, "-m", &message, &plan.tag, &tag_commit])
-        .map_err(&undo)?;
+        .map_err(undo)?;
     let tagged = repo
         .read(&[
             "for-each-ref",
@@ -903,7 +903,7 @@ pub fn qualify(
                 ),
             )
         })
-        .map_err(&undo)?;
+        .map_err(undo)?;
     let records_commit = repo.read(&["rev-parse", "HEAD"])?.trim().to_owned();
     Ok(Qualified {
         tag: plan.tag.clone(),

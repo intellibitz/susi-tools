@@ -61,19 +61,23 @@ Not finished, said plainly:
 - **Susi is being rebuilt.** Since 2026-11-22 Susi holds only its licence and
   vault core. Its applications are being rebuilt, so a capability Susi Core
   points to the product for has no implementation there today.
-- **Susi Tools is being filled.** Since 2026-11-22 it holds a speed report and
-  the first, read-only part of a small new development program; its README
-  lists what it holds. The program agents use still comes from source kept
-  privately, and Susi Core's development-only code (`scripts/`, `toolchain/`,
+- **Susi Tools is being filled.** Since 2026-11-22 it holds a speed report, a
+  runner for a checkout's suite on Linux, and the rebuilt development program,
+  installed on the Windows host, which hands every command it does not have yet
+  to the earlier one, still built from source kept privately; its README lists
+  what it holds. Susi Core's development-only code (`scripts/`, `toolchain/`,
   `fuzz/`) moves there piece by piece.
 - **Speed.** Since 2026-11-22 nothing an agent waits on may take more than 10
-  seconds, warm. Not met yet: Susi Core's Linux checks, Susi's whole test
-  suite and its optimised build take longer. Each is measured, dated and its
-  fix recorded in the repository it belongs to.
-- **The latest compiler.** Rust 1.100.0 is installed but not yet used: two
-  low-level parts (Susi's Windows start-up code and Susi Core's
-  standard-library builder) are checked only against Rust 1.99.0 and must be
-  re-checked before the compiler moves.
+  seconds, warm. Susi Tools' suite meets it on Linux, where it runs before every
+  ship (about 5 s from Windows through WSL2); on Windows it takes about 40 s.
+  Not met yet: Susi's whole test suite and its optimised build take longer.
+  Each is measured, dated and its fix recorded in the repository it belongs to.
+- **The latest compiler.** Rust 1.100.0 is installed but Susi and Susi Core do
+  not use it yet: two low-level parts (Susi's Windows start-up code and Susi
+  Core's standard-library builder) are checked only against Rust 1.99.0 and
+  must be re-checked before the compiler moves. Susi Tools names no compiler
+  version: on the Windows host it builds with 1.100.0, in WSL2 with 1.99.0, and
+  both pass its lint since 2026-11-22.
 - **CachyOS.** The Linux side of the dual-boot setup needs the new sync script
   run there once, by hand; it then renames the old layout to the new names and
   imports. Until then the old script there stops at the new format without

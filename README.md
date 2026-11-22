@@ -91,8 +91,12 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 50, on made-up repositories and records only. On Linux they take about 2 s. On
-    Windows the whole suite took 59 s on 2026-11-22 (the write tests, each building scratch
+  - **Tests:** 53, on made-up repositories and records only, run on Linux before every ship
+    (`scripts/linux-suite.ps1` below): about 2.5 s for the tests, 4.5 to 4.8 s for the whole
+    run from Windows with nothing changed and 7.4 to 9.0 s after a one-file edit (2026-11-22).
+    On Windows the same suite takes about 40 s, because each write test drives the real
+    commands end to end (a `tasks start` starts 49 `git` processes) and Windows starts processes
+    almost one at a time. History: on Windows the whole suite took 59 s on 2026-11-22 (the write tests, each building scratch
     repositories), over the 10-second line: Windows started a `git` process in about 117 ms
     that day, and those tests start hundreds. Their made-up repositories are now built once
     for every test process and run (until 2026-11-22 each test process built its own and left it
@@ -112,14 +116,24 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     call) is handed to it, with a one-line note, so every instruction and hook
     keeps working. Not yet: the CachyOS host still runs the earlier program;
     the hand-off ends when no contract or hook names a command it alone has.
-  - Build it with `cargo build --release --offline`; test it with
-    `cargo test --offline`.
+  - Build it with `cargo build --release --offline`. Test it before every ship with
+    `pwsh scripts/linux-suite.ps1 -Agent <you> -Lint` (from Windows, through WSL2), or
+    `cargo nextest run --offline --locked` on a Linux host; before installing a new build on a
+    Windows host, run the suite there too (`cargo nextest run --offline --locked`), since code
+    that behaves differently on Windows runs only its Linux branch on Linux.
 - [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
   everyday operations (build, the whole suite, lint, formatting, the optimised
   build and the development program's own commands) against the 10-second line
   the CEO set on 2026-11-22: "no more waiting more than 10s for anything - test,
   releases whatever it is". It measures warm only and needs PowerShell 7 and
   cargo. Verified on Windows against Susi on 2026-11-22; not yet run on Linux.
+- [`scripts/linux-suite.ps1`](scripts/linux-suite.ps1) runs a checkout's whole suite on
+  Linux, as it stands, committed or not: from Windows it copies the checkout's files onto a
+  WSL2 distribution's own disk (keeping their times, so only what changed is rebuilt), builds
+  and tests there with one copy and target folder per agent, and with `-Lint` runs Clippy;
+  on Linux it runs the suite in place. Added on 2026-11-22, when the CEO chose Linux for
+  Susi Tools' suite; verified on Windows through WSL2 (Ubuntu 24.04) that day, not yet on
+  CachyOS.
 
 Each piece is checked against the rules above before it lands.
 This repository is public since 2026-11-22: its write-only backups are at
