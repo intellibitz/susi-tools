@@ -57,12 +57,14 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
   - **Tests:** 25, on made-up repositories only. On Linux they take 0.7 s; on
     Windows about 15 s, because Windows starts the many short `git`
     processes slowly when the tests run side by side.
-  - **Not yet:** it is not installed in place of the earlier program. The
-    contracts still tell agents to run commands only the earlier program has
-    (among them `workflow vision`, `workflow prune`, `workflow start`,
-    `harvest`, `releases`); switching now would leave those instructions
-    pointing at nothing. The switch comes with the short contracts of the
-    foundation plan's phase 7. Until then, run it from where it is built.
+  - **Installed since 2026-11-22**, in place of the earlier program, on the
+    Windows development host (`~/.cargo/bin/susi-tools`). The earlier program
+    stays installed beside it as `susi-tools-legacy`: any command this one does
+    not have yet (among them `workflow vision`, `workflow prune`,
+    `workflow start`, `harvest`, `releases`, and the checks the Git hooks
+    call) is handed to it, with a one-line note, so every instruction and hook
+    keeps working. Not yet: the CachyOS host still runs the earlier program;
+    the hand-off ends when no contract or hook names a command it alone has.
   - Build it with `cargo build --release --offline`; test it with
     `cargo test --offline`.- [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
   everyday operations (build, the whole suite, lint, formatting, the optimised

@@ -40,6 +40,8 @@ The session start
                                  say what you hold
 
 The earlier program's spellings work too: workflow board list|post|check, workflow ship.
+Any other command goes to the earlier program, installed beside this one as susi-tools-legacy.
+Any other command goes to the earlier program, installed beside this one as susi-tools-legacy.
 
 Every command also takes:
   --repo <path>    the repository: a checkout or worktree, or (for list) a bare repository
@@ -492,11 +494,50 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 }
             }
         }
-        _ => Err(Failure::Usage(format!(
-            "unknown command {:?}",
-            words.join(" ")
-        ))),
+        _ => forward(args),
     }
+}
+
+/// A command this program does not have yet goes to the earlier program, installed beside it as
+/// `susi-tools-legacy` (or named by `SUSI_TOOLS_LEGACY`), so every instruction that names one
+/// keeps working while the contracts are shortened. Without it, the command is unknown.
+fn forward(args: &[String]) -> Result<(), Failure> {
+    let legacy = std::env::var_os("SUSI_TOOLS_LEGACY")
+        .map(PathBuf::from)
+        .or_else(|| find_on_path("susi-tools-legacy"));
+    let Some(legacy) = legacy else {
+        return Err(Failure::Usage(format!(
+            "unknown command {:?}",
+            args.join(" ")
+        )));
+    };
+    eprintln!(
+        "susi-tools: \"{}\" is not in the rebuilt program yet; running the earlier one ({})",
+        args.iter().take(2).cloned().collect::<Vec<_>>().join(" "),
+        legacy.display()
+    );
+    let status = std::process::Command::new(&legacy)
+        .args(args)
+        .status()
+        .map_err(|e| Failure::Run(format!("cannot run {}: {e}", legacy.display())))?;
+    match status.code() {
+        Some(0) => Ok(()),
+        Some(code) => std::process::exit(code),
+        None => Err(Failure::Run(
+            "the earlier program stopped on a signal".into(),
+        )),
+    }
+}
+
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let exe = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    };
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(&exe))
+        .find(|candidate| candidate.is_file())
 }
 
 /// Landing work keeps a claim alive; a claim on a task this ship closed is released (Mandate 85).
