@@ -67,9 +67,8 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
   - **No release command since 2026-11-22.** It cut Susi Core's releases
     (v0.21.72 was its first and last), and Susi Core has had no program and cut
     no releases since that day; it left with them, and history keeps it.
-  - **The harvest audit:** `susi-tools harvest audit [--range <A..B>] [--json]`,
-    and the same as `local-harvest audit` through a second program,
-    `local-harvest`, which Susi's release gate calls by that name. The same
+  - **The harvest audit:** `local-harvest audit [--range <A..B>] [--json]`, a
+    second program built here, which Susi's release gate calls by that name. The same
     checks and messages as the earlier program's audit (Susi's
     `tools/core-xtask`, commit `5404fd12`): each manifest's upstream blobs and
     evidence, the Apache-2.0 4(a) to 4(d) notices, the retired records and the
