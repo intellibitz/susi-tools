@@ -48,13 +48,30 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     fast-forward of `main`, then Landed on the Board; renews your claim, or
     releases it when the ship closed its task). The earlier program's
     spellings `workflow board …` and `workflow ship` work too.
+  - **Releases of Susi Core:** `release check | qualify | publish`, on an
+    x86_64 Linux host in a clean checkout of Core's `main`. `qualify` runs
+    Core's checks (formatting, Clippy, licences with cargo-deny, the whole
+    suite with cargo-nextest, doc-tests, the distribution build), then a smoke
+    run of the built program from a private home (`--version`, an MCP session
+    over standard input and output, the daemon's health, token check and
+    stop). Only when all of it passes does it tag the commit (annotated;
+    `--sign` signs it) and commit `releases/<tag>.json` and
+    `releases/qualification/<tag>.json` in Core's formats; it publishes
+    nothing. `publish` pushes that commit to `main` and the tag in one atomic
+    push, and refuses a version already published. Proven on 2026-11-22 on a
+    scratch copy of Core with a scratch origin: `qualify` took 12 s warm,
+    Core's own record tests accepted the records, and Core's `install.sh`
+    rebuilt the release from the scratch origin with a matching checksum. Not
+    yet: no real release has been cut with it, and Core's licence policy
+    refuses `unicode-ident` (Unicode-3.0) today, so the licences gate stops a
+    real release until that is decided.
   - **Same formats as the earlier program**, so both read each other's work.
     Checked on 2026-11-22 on Susi's live Board and queue: the earlier program
     read this program's claim (holder, lease, scopes), listed its Board
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 25, on made-up repositories only. On Linux they take 0.7 s; on
+  - **Tests:** 35, on made-up repositories and records only. On Linux they take about 1 s; on
     Windows about 15 s, because Windows starts the many short `git`
     processes slowly when the tests run side by side.
   - **Installed since 2026-11-22**, in place of the earlier program, on the
@@ -66,7 +83,8 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     keeps working. Not yet: the CachyOS host still runs the earlier program;
     the hand-off ends when no contract or hook names a command it alone has.
   - Build it with `cargo build --release --offline`; test it with
-    `cargo test --offline`.- [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
+    `cargo test --offline`.
+- [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
   everyday operations (build, the whole suite, lint, formatting, the optimised
   build and the development program's own commands) against the 10-second line
   the CEO set on 2026-11-22: "no more waiting more than 10s for anything - test,
