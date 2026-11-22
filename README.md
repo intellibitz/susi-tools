@@ -56,14 +56,29 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     Susi's queue (which holds the ecosystem's tasks and the Board) can claim
     files here or in Susi Core: the claim is kept on the repository whose files
     it covers, and a ship there renews it while the task is open in Susi.
-  - **The checks the Git hooks run** (since 2026-11-22, so no hook needs the
-    earlier program): `workflow root show | root init --agent <name>` (an agent
-    works only under its own root, marked by `.susi-agent-root`), `workflow
-    fresh` (a commit far behind the remote's `main` is refused), `workflow
-    reuse` (a commit for a task of size `m` or `l` with no reuse decision is
-    refused) and `workflow guard commit | merge` (no commit in a primary
-    checkout or straight on `main`). Each refuses only what its rule names and
-    says how to proceed; the contracts are the earlier program's.
+  - **The Git hooks of Susi and Susi Core** (`src/githook.rs`, since
+    2026-11-23): each repository's `.githooks/<stage>` is one line that runs
+    `susi-tools hook <stage>`, so the rules are written once, here, instead of
+    the 1,400 lines of shell the two repositories used to copy between them.
+    `pre-commit` checks the agent's own root and a fresh checkout, then the
+    staged change (no new blob of 1 MiB or more, no secret-shaped line, no
+    added `dbg!(`, identical `CLAUDE.md` and `GEMINI.md`, formatted Rust);
+    `commit-msg` wants a subject that says what and a `Task:` trailer naming a
+    task recorded or claimed on that repository, whose claim is yours and
+    covers every staged file, and a reuse decision for a sized task;
+    `pre-push` lets through only `main` (forward only), `refs/agents/<name>`,
+    `vX.Y.Z` tags (created once), the task queue's blobs and Board items
+    (created once); `post-checkout` lists finished worktrees after `git
+    worktree add`. A repository's hook adds what it needs: `--worktrees` (no
+    commit in a primary checkout or straight on `main`), `--isolation` (the
+    agent's own `SUSI_HOME`, build target and scratch, outside every checkout)
+    and `--token-prefix <prefix>` (its own licence tokens count as secrets).
+    The public repositories' boundary, that nothing of the private product
+    enters them, is their canonical server's to enforce at push, with the same
+    patterns, so this public program never spells out the product's markers.
+    The single checks stay callable by hand: `workflow root show | root init
+    --agent <name>`, `workflow fresh`, `workflow reuse`, `workflow guard commit
+    | merge`.
   - **No release command since 2026-11-22.** It cut Susi Core's releases
     (v0.21.72 was its first and last), and Susi Core has had no program and cut
     no releases since that day; it left with them, and history keeps it.

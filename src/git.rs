@@ -266,6 +266,33 @@ impl Repo {
         }
     }
 
+    /// The sizes of many objects in one `git cat-file --batch-check` process, in the order
+    /// asked. A missing object is 0.
+    pub fn sizes(&self, oids: &[String]) -> Result<Vec<u64>, String> {
+        if oids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut child = self
+            .command()
+            .args(["cat-file", "--batch-check=%(objectsize)"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("cannot run git cat-file: {e}"))?;
+        let mut stdin = child.stdin.take().ok_or("git cat-file has no input")?;
+        let request: String = oids.iter().map(|oid| format!("{oid}\n")).collect();
+        let writer = std::thread::spawn(move || stdin.write_all(request.as_bytes()));
+        let out = child
+            .wait_with_output()
+            .map_err(|e| format!("git cat-file: {e}"))?;
+        let _ = writer.join();
+        Ok(String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|line| line.trim().parse().unwrap_or(0))
+            .collect())
+    }
+
     /// The contents of many objects in one `git cat-file --batch` process, in the order asked.
     /// A missing object is `None`.
     pub fn blobs(&self, oids: &[String]) -> Result<Vec<Option<Vec<u8>>>, String> {

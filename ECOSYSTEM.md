@@ -66,10 +66,10 @@ Not finished, said plainly:
   install.
 - **Susi Tools is being filled.** It holds the development program, which hands
   every command it does not have yet to the earlier one, still built from
-  source kept privately; on Linux, where that earlier program is not installed,
-  four checks the Git hooks ask for do not run yet. It also holds a speed report
-  and a runner for a checkout's suite on Linux. Susi Core's development-only
-  code (`scripts/` and its Git hooks) moves here piece by piece.
+  source kept privately (on Linux that earlier program is not installed). It
+  also holds a speed report and a runner for a checkout's suite on Linux.
+  Since 2026-11-23 it holds the rules of Susi's and Susi Core's Git hooks
+  (`susi-tools hook <stage>`); their hook files are one-line calls to it.
 - **Speed.** Nothing an agent waits on may take more than 10 seconds, warm.
   Over the line today: Susi's optimised release build (about 20 s on Linux).
 - **The latest compiler.** Susi and Susi Core use Rust 1.99.0; Susi's Windows

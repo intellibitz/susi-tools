@@ -162,7 +162,7 @@ fn run(args: &[&str], cwd: &Path, remote: &str, agent: Option<&str>) -> Result<(
     }
 }
 
-fn allowed(var: &str) -> bool {
+pub fn allowed(var: &str) -> bool {
     std::env::var_os(var).is_some_and(|v| !v.is_empty() && v != "0")
 }
 
@@ -431,6 +431,18 @@ fn only_task_records_staged(work: &Path) -> bool {
     !paths.is_empty() && paths.iter().all(|p| p.starts_with(".agents/tasks/"))
 }
 
+/// Mandate 77: refuse a checkout inside another agent's root, or under a marker that cannot be
+/// read.
+pub fn own_root(repo: &Repo, agent: Option<&str>) -> Result<(), Stop> {
+    let work = repo.work_tree()?;
+    let verdict = verdict(work, asking(agent, Some(repo)).as_deref())
+        .map_err(|why| Stop::Refused(format!("❌ Mandate 77: {why}")))?;
+    match root_refusal(&verdict) {
+        Some(why) => Err(Stop::Refused(why)),
+        None => Ok(()),
+    }
+}
+
 /// Whether `repo` is a primary checkout: its git directory is the common one, so it is not a
 /// linked worktree.
 fn primary(repo: &Repo) -> Result<bool, String> {
@@ -447,12 +459,7 @@ pub fn guard(repo: &Repo, commit: bool, remote: &str, agent: Option<&str>) -> Re
             "❌ Mandate 49: do not commit in the primary checkout.\n   Work in your own linked worktree on your own branch: git worktree add <your root>/wt/<name> -b <you>/<name> origin/main".into(),
         ));
     }
-    let work = repo.work_tree()?;
-    let verdict = verdict(work, asking(agent, Some(repo)).as_deref())
-        .map_err(|why| Stop::Refused(format!("❌ Mandate 77: {why}")))?;
-    if let Some(why) = root_refusal(&verdict) {
-        return Err(Stop::Refused(why));
-    }
+    own_root(repo, agent)?;
     if commit {
         let branch = repo.try_read(&["symbolic-ref", "-q", "--short", "HEAD"]);
         if !allowed("SUSI_ALLOW_MAIN") && branch.as_deref().map(str::trim) == Some("main") {
