@@ -61,10 +61,11 @@ Not finished, said plainly:
 - **Susi is being rebuilt.** Since 2026-11-22 Susi holds only its licence and
   vault core. Its applications are being rebuilt, so a capability Susi Core
   points to the product for has no implementation there today.
-- **Susi Tools holds one tool.** Its first, since 2026-11-22, is a speed
-  report that times a checkout's everyday operations. The development program
-  and Susi Core's development-only code (`scripts/`, `toolchain/`, `fuzz/`)
-  move there piece by piece.
+- **Susi Tools is being filled.** Since 2026-11-22 it holds a speed report and
+  the first, read-only part of a small new development program; its README
+  lists what it holds. The program agents use still comes from source kept
+  privately, and Susi Core's development-only code (`scripts/`, `toolchain/`,
+  `fuzz/`) moves there piece by piece.
 - **Speed.** Since 2026-11-22 nothing an agent waits on may take more than 10
   seconds, warm. Not met yet: Susi Core's Linux checks, Susi's whole test
   suite and its optimised build take longer. Each is measured, dated and its

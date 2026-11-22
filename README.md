@@ -28,8 +28,20 @@ point to it.
 
 ## Status
 
-Founded on 2026-11-22 with a clean history. It holds one tool so far:
+Founded on 2026-11-22 with a clean history. What it holds so far:
 
+- **`susi-tools` 0.1, the development program, rebuilt small** (`src/`). Its
+  first slice only reads: `susi-tools board list` and `susi-tools tasks list`
+  show the Susi Board and the task queue of any repository (`--repo`, a bare
+  repository, a checkout or a worktree). It uses nothing but the Rust standard
+  library and the `git` program, and it writes nothing, inside a checkout or
+  out (a test holds that). Checked on 2026-11-22 against the live Board and
+  both queues: the same items, tasks and claims as the earlier program, in 0.2
+  to 0.3 seconds where the earlier one took 1.4 to 23. Not yet: the commands
+  that write (claim, release, post, ship, start a worktree, close a task), so
+  it is not installed in place of the earlier program, whose source is still
+  kept privately. Build it with `cargo build --release --offline`; test it
+  with `cargo test --offline`.
 - [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
   everyday operations (build, the whole suite, lint, formatting, the optimised
   build and the development program's own commands) against the 10-second line
@@ -37,10 +49,7 @@ Founded on 2026-11-22 with a clean history. It holds one tool so far:
   releases whatever it is". It measures warm only and needs PowerShell 7 and
   cargo. Verified on Windows against Susi on 2026-11-22; not yet run on Linux.
 
-The development program `susi-tools` itself is still built from source kept
-privately, and it moves here piece by piece, each piece checked against the
-rules above before it lands.
-
+Each piece is checked against the rules above before it lands.
 This repository is public since 2026-11-22: its write-only backups are at
 `github.com/intellibitz/susi-tools` and `gitlab.com/intellibitz/susi-tools`,
 `main` and signed release tags only. The repository of record is the local
