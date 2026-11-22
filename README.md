@@ -10,6 +10,9 @@ move together:
 - **Susi Tools** (this repository, `susi-tools`): everything used only while developing,
   testing and releasing Susi. Nothing here ships inside a production program.
 
+How the three repositories fit together, and what is finished and what is
+not: [`ECOSYSTEM.md`](ECOSYSTEM.md), the same page in all three.
+
 ## Rules of this repository
 
 - **Apache-2.0, and nothing secret.** No credentials, keys, licence material or
