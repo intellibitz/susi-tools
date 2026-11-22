@@ -35,8 +35,9 @@ Finished:
 
 - The three repositories exist and move together under the names above.
   Until 2026-11-22 Susi Core's repository was called `susi` and Susi's was
-  called `susi-commercial-apps`; older text uses those names, and the old
-  public address of Susi Core redirects to the new one.
+  called `susi-commercial-apps`; older text uses those names. Susi Core's old
+  public address, `github.com/intellibitz/susi`, now belongs to Susi's private
+  backup and no longer leads to Susi Core: use `intellibitz/susi-core`.
 - Susi Core builds and passes its tests offline on Linux. It has no line
   limit: its size is measured and reported.
 - The offline proof passes: with every proxy dead and Git limited to local
