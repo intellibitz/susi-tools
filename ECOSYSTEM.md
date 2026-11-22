@@ -39,6 +39,11 @@ Finished:
   public address of Susi Core redirects to the new one.
 - Susi Core builds and passes its tests offline on Linux. It has no line
   limit: its size is measured and reported.
+- The offline proof passes: with every proxy dead and Git limited to local
+  files, all three repositories clone from the local server, Susi builds,
+  passes its tests and makes and rolls back a test release, Susi Core passes
+  its Linux checks, the transfer between Windows and CachyOS goes round
+  without changing anything, and the backup sync fails cleanly.
 
 Not finished, said plainly:
 
@@ -50,6 +55,10 @@ Not finished, said plainly:
 - **Susi Tools is empty.** It holds no tooling yet. The development tooling and
   Susi Core's development-only code (`scripts/`, `toolchain/`, `fuzz/`) move
   there piece by piece.
-- **The offline proof.** The test that clones, builds, tests and releases all
-  three repositories with GitHub, GitLab and the internet cut off is being
-  rewritten for three repositories.
+- **The latest compiler.** Rust 1.100.0 is installed but not yet used: two
+  low-level parts (Susi's Windows start-up code and Susi Core's
+  standard-library builder) are checked only against Rust 1.99.0 and must be
+  re-checked before the compiler moves.
+- **CachyOS.** The Linux side of the dual-boot setup renames itself to the new
+  names on its next run; that was tested in a Linux copy, not yet on the real
+  host.
