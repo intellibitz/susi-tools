@@ -27,11 +27,19 @@ not: [`ECOSYSTEM.md`](ECOSYSTEM.md), the same page in all three.
 
 ## Status
 
-Founded on 2026-11-22 with a clean history. It holds no tooling yet: the
-development program `susi-tools` is still built from source kept privately, and
-it moves here piece by piece, each piece checked against the rules above
-before it lands. This repository is private on its backups until the CEO says
-publish.
+Founded on 2026-11-22 with a clean history. It holds one tool so far:
+
+- [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
+  everyday operations (build, the whole suite, lint, formatting, the optimised
+  build and the development program's own commands) against the 10-second line
+  the CEO set on 2026-11-22: "no more waiting more than 10s for anything - test,
+  releases whatever it is". It measures warm only and needs PowerShell 7 and
+  cargo. Verified on Windows against Susi on 2026-11-22; not yet run on Linux.
+
+The development program `susi-tools` itself is still built from source kept
+privately, and it moves here piece by piece, each piece checked against the
+rules above before it lands. This repository is private on its backups until
+the CEO says publish.
 
 ## License
 

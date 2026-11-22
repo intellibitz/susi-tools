@@ -53,9 +53,14 @@ Not finished, said plainly:
 - **Susi is being rebuilt.** Since 2026-11-22 Susi holds only its licence and
   vault core. Its applications are being rebuilt, so a capability Susi Core
   points to the product for has no implementation there today.
-- **Susi Tools is empty.** It holds no tooling yet. The development tooling and
-  Susi Core's development-only code (`scripts/`, `toolchain/`, `fuzz/`) move
-  there piece by piece.
+- **Susi Tools holds one tool.** Its first, since 2026-11-22, is a speed
+  report that times a checkout's everyday operations. The development program
+  and Susi Core's development-only code (`scripts/`, `toolchain/`, `fuzz/`)
+  move there piece by piece.
+- **Speed.** Since 2026-11-22 nothing an agent waits on may take more than 10
+  seconds, warm. Not met yet: Susi Core's Linux checks take 16 to 19 seconds
+  (70 before their tests ran side by side), Susi's whole test suite about 15
+  and its optimised build about 33. Each is measured, and its fix recorded.
 - **The latest compiler.** Rust 1.100.0 is installed but not yet used: two
   low-level parts (Susi's Windows start-up code and Susi Core's
   standard-library builder) are checked only against Rust 1.99.0 and must be
