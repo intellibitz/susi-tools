@@ -269,10 +269,13 @@ fn the_worktree_rule_applies_where_a_repository_asks_for_it() {
     );
     let merge = fx.hook(&work, &["pre-merge-commit", "--worktrees"], "", &[]);
     assert!(!merge.status.success());
-    assert!(fx
-        .hook(&work, &["pre-merge-commit"], "", &[])
-        .status
-        .success());
+    let unasked = fx.hook(&work, &["pre-merge-commit"], "", &[]);
+    assert_eq!(
+        unasked.status.code(),
+        Some(2),
+        "the stage is only the worktree rule: {}",
+        err(&unasked)
+    );
 }
 
 #[test]
@@ -472,11 +475,11 @@ fn commit_msg_wants_a_task_recorded_or_claimed_here_and_keeps_to_the_claim() {
     let none = run("feat: a\n", &[]);
     assert!(!none.status.success());
     assert!(err(&none).contains("Mandate 50"), "{}", err(&none));
-    let wip = run("wip\n\nTask: LOCAL-x\n", &[]);
+    let wip = run("wip\n", &[]);
     assert!(!wip.status.success());
-    assert!(run("feat: a\n\nTask: LOCAL-core-work\n", &[])
-        .status
-        .success());
+    let local = run("feat: a\n\nTask: LOCAL-core-work\n", &[]);
+    assert!(!local.status.success(), "a LOCAL- trailer names no task");
+    assert!(err(&local).contains("Mandate 50"), "{}", err(&local));
     let unknown = run("feat: a\n\nTask: T-A-1\n", &[]);
     assert!(!unknown.status.success());
     assert!(
@@ -484,19 +487,18 @@ fn commit_msg_wants_a_task_recorded_or_claimed_here_and_keeps_to_the_claim() {
         "{}",
         err(&unknown)
     );
-    assert!(run(
-        "chore: a comment line\n# Task: nothing\n\nTask: LOCAL-y\n",
-        &[]
-    )
-    .status
-    .success());
 
-    // Recorded here: a small task owes no reuse decision.
+    // Recorded here: a small task owes no reuse decision. A comment line names nothing.
     fx.write(
         ".agents/tasks/T-A-1.json",
         r#"{"id":"T-A-1","size":"s","created_unix":1795000000}"#,
     );
     assert!(run("feat: a\n\nTask: T-A-1\n", &[]).status.success());
+    assert!(
+        run("chore: a comment line\n# Task: T-Z-9\n\nTask: T-A-1\n", &[])
+            .status
+            .success()
+    );
 
     // Claimed here, from another repository's queue: the claim is yours and covers the change.
     fx.claim("T-B-2", "alpha", &["src"]);

@@ -46,8 +46,9 @@ The session start
   susi-tools workflow check      fast-forward a clean checkout, show what is addressed to you,
                                  say what you hold
 The Git hooks of Susi and Susi Core: each .githooks/<stage> is one line that runs
-  susi-tools hook pre-commit | commit-msg <file> | pre-merge-commit | pre-push <remote> [url]
-                  | post-checkout <old> <new> <flag>   (susi-tools hook --help for the options)
+  susi-tools hook pre-commit | commit-msg <file> | pre-merge-commit --worktrees
+                  | pre-push <remote> [url] | post-checkout <old> <new> <flag>
+                  (susi-tools hook --help for the options)
 Your agent root, which holds your clones, worktrees, build targets and scratch (the hooks
 refuse a commit inside another agent's root)
   susi-tools workflow root init --agent <name> [dir]   (default ~/susi-agents/<name>)

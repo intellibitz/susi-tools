@@ -20,7 +20,7 @@
 //! - `commit-msg <file>`: a subject that says what; a `Task:` trailer naming a task recorded or
 //!   claimed here; for a claimed task, the claim is yours and covers every staged file; a sized
 //!   task states where its agent looked (the reuse rule, `hooks.rs`).
-//! - `pre-merge-commit`: the worktree rule, where asked for.
+//! - `pre-merge-commit --worktrees`: the worktree rule for a merge (Susi Core's hook).
 //! - `pre-push <remote> [url]`: refs and records on standard input, as Git gives them. Only
 //!   `main` is a branch, and it only moves forward; agents publish to `refs/agents/<name>`
 //!   (fast-forwards, or deleted); `vX.Y.Z` tags are created once; the task queue's records are
@@ -53,7 +53,7 @@ const QUEUE_NAMESPACES: [&str; 5] = [
 const USAGE: &str = "\
   susi-tools hook pre-commit [--worktrees] [--isolation] [--token-prefix <prefix>]...
   susi-tools hook commit-msg <message-file>
-  susi-tools hook pre-merge-commit [--worktrees]
+  susi-tools hook pre-merge-commit --worktrees
   susi-tools hook pre-push <remote> [url]   (records on standard input)
   susi-tools hook post-checkout <old> <new> <flag>
 Each repository's .githooks/<stage> is one line that runs the stage with the options it needs.";
@@ -98,7 +98,9 @@ pub fn run_cli(args: &[&str]) -> Result<(), Stop> {
             commit_msg(&repo, &message)
         }
         ["pre-merge-commit"] if policy.worktrees => hooks::guard(&repo, false, "origin", None),
-        ["pre-merge-commit"] => Ok(()),
+        ["pre-merge-commit"] => Err(Stop::Usage(
+            "pre-merge-commit applies only the worktree rule: give --worktrees".into(),
+        )),
         ["pre-push", _remote, ..] => {
             let mut input = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)
@@ -638,26 +640,13 @@ fn commit_msg(repo: &Repo, message: &str) -> Result<(), Stop> {
             "❌ Mandate 94: say what the commit does, not \"{subject}\"."
         )));
     }
-    let local = message.lines().any(|l| {
-        l.strip_prefix("Task: LOCAL-")
-            .map(str::trim_end)
-            .is_some_and(|name| {
-                !name.is_empty()
-                    && name
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-            })
-    });
     let tasks: Vec<String> = hooks::tasks_in_message(&message)
         .into_iter()
         .filter(|id| task_id_shaped(id))
         .collect();
     if tasks.is_empty() {
-        if local {
-            return Ok(());
-        }
         return Err(Stop::Refused(
-            "❌ Mandate 50: this commit names no task. End the message with a trailer:\n     Task: T-<AGENT>-<n>   (a task recorded or claimed here: susi-tools tasks start ...)\n     Task: LOCAL-<name>    (standalone work in a repository that allows it)".into(),
+            "❌ Mandate 50: this commit names no task. End the message with a trailer:\n     Task: T-<AGENT>-<n>   (a task recorded or claimed here: susi-tools tasks start ...)".into(),
         ));
     }
     let work = repo.work_tree()?;
