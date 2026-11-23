@@ -160,7 +160,9 @@ fn speed_table_times_every_operation_including_features() {
         "{out}"
     );
     assert!(
-        out.contains("cargo nextest run --workspace --offline --locked --no-default-features"),
+        out.contains(
+            "cargo nextest run --offline --locked --no-default-features -p tiny-speed-probe"
+        ),
         "{out}"
     );
     assert!(
@@ -180,6 +182,67 @@ fn speed_table_times_every_operation_including_features() {
         std::fs::read(&src).unwrap(),
         before,
         "touched file was not restored byte for byte"
+    );
+}
+
+impl WorkspaceFixture {
+    fn run_gates(&self) -> (i32, String, String) {
+        let out = Command::new(env!("CARGO_BIN_EXE_susi-tools"))
+            .current_dir(self.work())
+            .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("CARGO_TARGET_DIR", self.target_dir())
+            .args(["gates"])
+            .output()
+            .unwrap();
+        (
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    }
+}
+
+/// `gates` (the CEO, 2026-11-24: the 10-second line is non-negotiable): every gate before a ship,
+/// side by side; the suite without default features only for the packages that have features,
+/// in its own target folder, so the two builds never overwrite each other's binaries.
+#[test]
+fn gates_run_every_gate_side_by_side_and_name_the_one_that_fails() {
+    let fx = WorkspaceFixture::new("gates", true, GOOD_LIB);
+    let (code, out, err) = fx.run_gates();
+    assert_eq!(code, 0, "stdout:\n{out}\nstderr:\n{err}");
+    for gate in [
+        "ok",
+        "tests: cargo nextest run --workspace --offline --locked",
+        "tests, no default features: CARGO_TARGET_DIR=",
+        "cargo nextest run --offline --locked --no-default-features -p tiny-speed-probe",
+        "format: cargo fmt --all --check",
+        "clippy: cargo clippy --workspace --all-targets",
+        "clippy, no default features:",
+        "every gate passed",
+    ] {
+        assert!(out.contains(gate), "missing {gate}:\n{out}");
+    }
+    assert!(
+        fx.target_dir().join("no-default-features").is_dir(),
+        "{out}"
+    );
+
+    // A failing test fails the gates, and the failing gate is named with its output.
+    let fx = WorkspaceFixture::new(
+        "gates-fail",
+        false,
+        "#[test]\nfn fails() {\n    assert_eq!(1, 2);\n}\n",
+    );
+    let (code, out, _) = fx.run_gates();
+    assert_ne!(code, 0, "{out}");
+    assert!(
+        out.contains("FAILED") && out.contains("== tests failed:"),
+        "{out}"
+    );
+    assert!(
+        !out.contains("no default features"),
+        "no features, no such gate: {out}"
     );
 }
 

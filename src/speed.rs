@@ -91,6 +91,9 @@ impl Report {
             self.cores,
             self.line_seconds
         ));
+        out.push_str(
+            "The suites and the lints are timed side by side, as `susi-tools gates` runs them: each time is an upper bound.\n\n",
+        );
         write_table(&mut out, &self.warm);
         let ok_under = self.warm_ok_under_line();
         let total = self.warm.len();
@@ -271,79 +274,10 @@ pub fn run(repo: &Repo, cfg: &Config<'_>) -> Result<Report, String> {
         None,
     ));
 
-    // 2. Whole suite with cargo-nextest (warm: compile test binaries first, then time the run).
-    let nextest_warmup = [
-        "nextest",
-        "run",
-        "--workspace",
-        "--offline",
-        "--locked",
-        "--no-run",
-    ];
-    let nextest_args = ["nextest", "run", "--workspace", "--offline", "--locked"];
-    let _ = run_cargo(&work, &nextest_warmup, None);
-    warm.push(measure_cargo(
-        "cargo nextest run --workspace --offline --locked",
-        &work,
-        &nextest_args,
-        None,
-    ));
-
-    if info.has_features {
-        let nextest_ndf_warmup = [
-            "nextest",
-            "run",
-            "--workspace",
-            "--offline",
-            "--locked",
-            "--no-default-features",
-            "--no-run",
-        ];
-        let nextest_ndf_args = [
-            "nextest",
-            "run",
-            "--workspace",
-            "--offline",
-            "--locked",
-            "--no-default-features",
-        ];
-        let _ = run_cargo(&work, &nextest_ndf_warmup, None);
-        warm.push(measure_cargo(
-            "cargo nextest run --workspace --offline --locked --no-default-features",
-            &work,
-            &nextest_ndf_args,
-            None,
-        ));
-    }
-
-    // 3. Clippy and formatting (run before touching a source file so they see clean warm caches).
-    let clippy_args = [
-        "clippy",
-        "--workspace",
-        "--all-targets",
-        "--offline",
-        "--locked",
-        "--",
-        "-D",
-        "warnings",
-    ];
-    warm.push(measure_cargo(
-        "cargo clippy --workspace --all-targets --offline --locked -- -D warnings",
-        &work,
-        &clippy_args,
-        None,
-    ));
-
-    let fmt_args = ["fmt", "--all", "--check"];
-    warm.push(measure_cargo(
-        "cargo fmt --all --check",
-        &work,
-        &fmt_args,
-        None,
-    ));
-
-    // 4. Touch one source file, time `cargo build`, and always restore byte for byte.
-    // Inserted right after the nothing-changed build row so the table keeps build rows together.
+    // 2. Touch one source file, time `cargo build`, and always restore byte for byte; then the
+    // suites and the lints run side by side, as `susi-tools gates` runs them (the CEO, 2026-11-24:
+    // the 10-second line is non-negotiable; one after another they took 17.7 s). Each time is so
+    // measured under the others' load: an upper bound.
     if let (Some(touch_path), Some(rel)) = (&info.touch_file, &touched_rel) {
         let row = {
             let guard = TouchGuard::touch(touch_path)?;
@@ -356,19 +290,101 @@ pub fn run(repo: &Repo, cfg: &Config<'_>) -> Result<Report, String> {
             guard.restore()?;
             measured
         };
-        warm.insert(1, row);
+        warm.push(row);
     }
-
-    // 5. Git status and fetch.
-    warm.push(measure_git("git status", &work, &["status"]));
-    warm.push(measure_git("git fetch", &work, &["fetch"]));
-
-    // 6. `susi-tools workflow check`.
-    warm.push(measure_workflow_check(
-        &work,
-        self_exe.as_deref(),
-        cfg.agent,
-    ));
+    let base_target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| work.join("target"));
+    let customer_target = base_target.join("no-default-features");
+    let featured = info.has_features.then(|| info.featured.clone());
+    let (suite, customer, rest) = std::thread::scope(|scope| {
+        let suite = scope.spawn(|| {
+            let warmup = [
+                "nextest",
+                "run",
+                "--workspace",
+                "--offline",
+                "--locked",
+                "--no-run",
+            ];
+            let _ = run_cargo(&work, &warmup, None);
+            vec![measure_cargo(
+                "cargo nextest run --workspace --offline --locked",
+                &work,
+                &["nextest", "run", "--workspace", "--offline", "--locked"],
+                None,
+            )]
+        });
+        let customer = scope.spawn(|| {
+            let Some(packages) = &featured else {
+                return Vec::new();
+            };
+            // Only the packages with features change; built in their own target folder.
+            let mut args: Vec<String> = [
+                "nextest",
+                "run",
+                "--offline",
+                "--locked",
+                "--no-default-features",
+            ]
+            .iter()
+            .map(|a| (*a).to_owned())
+            .collect();
+            if packages.is_empty() {
+                args.push("--workspace".to_owned());
+            }
+            for package in packages {
+                args.extend(["-p".to_owned(), package.clone()]);
+            }
+            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            let mut warmup = refs.clone();
+            warmup.push("--no-run");
+            let _ = run_cargo(&work, &warmup, Some(&customer_target));
+            vec![measure_cargo(
+                &format!("cargo {}", refs.join(" ")),
+                &work,
+                &refs,
+                Some(&customer_target),
+            )]
+        });
+        let rest = scope.spawn(|| {
+            let clippy_args = [
+                "clippy",
+                "--workspace",
+                "--all-targets",
+                "--offline",
+                "--locked",
+                "--",
+                "-D",
+                "warnings",
+            ];
+            vec![
+                measure_cargo(
+                    "cargo clippy --workspace --all-targets --offline --locked -- -D warnings",
+                    &work,
+                    &clippy_args,
+                    None,
+                ),
+                measure_cargo(
+                    "cargo fmt --all --check",
+                    &work,
+                    &["fmt", "--all", "--check"],
+                    None,
+                ),
+                measure_git("git status", &work, &["status"]),
+                measure_git("git fetch", &work, &["fetch"]),
+                measure_workflow_check(&work, self_exe.as_deref(), cfg.agent),
+            ]
+        });
+        (
+            suite.join().unwrap_or_default(),
+            customer.join().unwrap_or_default(),
+            rest.join().unwrap_or_default(),
+        )
+    });
+    warm.extend(suite);
+    warm.extend(customer);
+    warm.extend(rest);
 
     // 8. Optional cold build into a throwaway target directory (never the agent's own).
     let mut cold = Vec::new();
@@ -400,7 +416,17 @@ pub fn run(repo: &Repo, cfg: &Config<'_>) -> Result<Report, String> {
 
 struct WorkspaceInfo {
     has_features: bool,
+    /// The packages that declare features, by name; empty when only a manifest scan saw them.
+    featured: Vec<String>,
     touch_file: Option<PathBuf>,
+}
+
+/// The packages whose build changes with `--no-default-features`: `None` when none declares a
+/// feature, `Some` of their names otherwise (empty when they could not be named, and the whole
+/// workspace stands in for them).
+pub fn featured_packages(work: &Path) -> Option<Vec<String>> {
+    let info = inspect_workspace(work);
+    info.has_features.then_some(info.featured)
 }
 
 /// Inspect the workspace with `cargo metadata --no-deps`, falling back to simple file scanning
@@ -411,6 +437,7 @@ fn inspect_workspace(work: &Path) -> WorkspaceInfo {
     }
     WorkspaceInfo {
         has_features: manifest_mentions_features(&work.join("Cargo.toml")),
+        featured: Vec::new(),
         touch_file: fallback_touch_file(work),
     }
 }
@@ -437,12 +464,17 @@ fn inspect_from_metadata(work: &Path) -> Option<WorkspaceInfo> {
         Some(Json::Array(items)) => items,
         _ => return None,
     };
-    let has_features = packages.iter().any(|pkg| {
-        matches!(
-            pkg.get("features"),
-            Some(Json::Object(entries)) if !entries.is_empty()
-        )
-    });
+    let featured: Vec<String> = packages
+        .iter()
+        .filter(|pkg| {
+            matches!(
+                pkg.get("features"),
+                Some(Json::Object(entries)) if !entries.is_empty()
+            )
+        })
+        .map(|pkg| pkg.text("name"))
+        .collect();
+    let has_features = !featured.is_empty();
     let root_manifest = canonical(&work.join("Cargo.toml"));
     let root_work = canonical(work);
     let mut best: Option<(u8, PathBuf)> = None;
@@ -488,6 +520,7 @@ fn inspect_from_metadata(work: &Path) -> Option<WorkspaceInfo> {
     }
     Some(WorkspaceInfo {
         has_features,
+        featured,
         touch_file: best.map(|(_, p)| p).or_else(|| fallback_touch_file(work)),
     })
 }

@@ -10,6 +10,7 @@ mod backup;
 mod board;
 mod check;
 mod claims;
+mod gates;
 mod git;
 mod git_program;
 mod githook;
@@ -46,6 +47,9 @@ Shipping
 Speed
   susi-tools speed [--cold] [--json]
                                  time everyday cargo, git and check operations against the 10s line
+  susi-tools gates [--target <triple>]...
+                                 every gate before a ship (tests, tests without default features,
+                                 format, Clippy, Clippy per target), side by side, inside the line
 Harvested code: the second program, local-harvest audit [--range <A..B>] | notices [--check]
 The session start
   susi-tools workflow check      fast-forward a clean checkout, show what is addressed to you,
@@ -568,6 +572,34 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 print!("{}", report.render_table());
             }
             if report.passed() {
+                Ok(())
+            } else {
+                Err(Failure::Silent)
+            }
+        }
+        ["gates", ..] => {
+            let rest = args.get(1..).unwrap_or(&[]);
+            let mut targets = Vec::new();
+            let mut i = 0;
+            while i < rest.len() {
+                match rest[i].as_str() {
+                    "--target" => {
+                        let triple = rest.get(i + 1).ok_or_else(|| {
+                            Failure::Usage("--target takes a target triple".into())
+                        })?;
+                        targets.push(triple.to_string());
+                        i += 2;
+                    }
+                    other => {
+                        return Err(Failure::Usage(format!("gates: unexpected `{other}`")));
+                    }
+                }
+            }
+            let repo = git::Repo::open(Path::new("."))?;
+            let work = repo.work_tree()?.to_path_buf();
+            let outcome = gates::run(&work, &targets).map_err(Failure::Run)?;
+            print!("{}", outcome.render(&work));
+            if outcome.passed() {
                 Ok(())
             } else {
                 Err(Failure::Silent)

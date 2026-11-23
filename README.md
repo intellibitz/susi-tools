@@ -69,14 +69,26 @@ Board, tasks and claims); the rules below are this repository's own.
     unsigned one.
   - **Speed:** `speed [--cold] [--json]` times a Cargo checkout's everyday
     operations (warm `cargo build` with nothing changed and after touching one
-    source file, `cargo nextest run` and `--no-default-features` where the
-    workspace has features, `cargo clippy --workspace --all-targets -- -D
+    source file, `cargo nextest run`, and with `--no-default-features` for the
+    packages that have features, `cargo clippy --workspace --all-targets -- -D
     warnings`, `cargo fmt --all --check`, `git status`, `git fetch` and
     `susi-tools workflow check`) against the 10-second line, in plain Rust with
     no shell or PowerShell, restoring the touched file byte for byte even when
-    a step fails. `--cold` also times a build after `cargo clean` in a
-    throwaway target directory, reported apart. Replaces the retired
-    `scripts/speed-report.ps1`.
+    a step fails. The suites and the lints are timed side by side, as `gates`
+    runs them, so each time is an upper bound and `speed` itself stays inside
+    the line (8.0 s on Susi, 2026-11-24; 17.7 s one after another). `--cold`
+    also times a build after `cargo clean` in a throwaway target directory,
+    reported apart. Replaces the retired `scripts/speed-report.ps1`.
+  - **Gates:** `gates [--target <triple>]...` runs every gate before a ship in
+    three lanes at once: the whole suite; the suite of the packages that have
+    features, with `--no-default-features`, in its own target folder
+    (`<target>/no-default-features`, so the two builds never overwrite each
+    other's binaries); and the lints (`cargo fmt --check`, Clippy for both
+    builds, and Clippy for every `--target` for both builds, with
+    `SUSI_CROSS_CHECK=1`). It names each gate's time and the failing one's
+    output, and says plainly when the whole run is over the 10-second line
+    (the CEO, 2026-11-24: "a non negotiable mandate would be 10s"). On Susi:
+    6.7 s, against 14.3 s one after another.
   - **The public firewall:** a public repository is pushed only through the
     firewall Susi keeps, named by `git config susi.publicFirewall <path>`: its
     pre-push hook runs the script on every push, as a server's pre-receive
