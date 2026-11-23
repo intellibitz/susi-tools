@@ -14,15 +14,11 @@ fn role(dir: &Path) -> Option<String> {
 }
 
 /// The repository that holds the Board, for work done in `current`:
-/// 1. `SUSI_BOARD_REPO`, when set;
-/// 2. `current` itself, when it is Susi (`.susi-repo-role`: `private-commercial`) or a bare
+/// 1. `current` itself, when it is Susi (`.susi-repo-role`: `private-commercial`) or a bare
 ///    repository that holds Board items;
-/// 3. the `susi-commercial-apps` clone in the agent root that contains `current` (the directory
+/// 2. the `susi-commercial-apps` clone in the agent root that contains `current` (the directory
 ///    with a `.susi-agent-root` file).
 pub fn board_repo(current: &Repo, current_path: &Path) -> Result<Repo, String> {
-    if let Some(path) = std::env::var_os("SUSI_BOARD_REPO") {
-        return Repo::open(Path::new(&path));
-    }
     match current.work_tree() {
         Ok(work) => {
             if role(work).as_deref() == Some("private-commercial") {
@@ -47,13 +43,13 @@ pub fn board_repo(current: &Repo, current_path: &Path) -> Result<Repo, String> {
                 return Repo::open(&clone);
             }
             return Err(format!(
-                "the agent root {} has no Susi clone in susi-commercial-apps: clone Susi there, or set SUSI_BOARD_REPO",
+                "the agent root {} has no Susi clone in susi-commercial-apps: clone Susi there",
                 dir.display()
             ));
         }
     }
     Err(
-        "cannot find the Board: work inside an agent root with a Susi clone in susi-commercial-apps, or set SUSI_BOARD_REPO"
+        "cannot find the Board: work inside an agent root with a Susi clone in susi-commercial-apps"
             .into(),
     )
 }

@@ -147,7 +147,6 @@ impl Fixture {
             .current_dir(&self.root)
             .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("SUSI_TOOLS_REPO")
             .args(args)
             .output()
             .unwrap();

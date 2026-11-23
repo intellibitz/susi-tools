@@ -28,10 +28,10 @@ susi-tools 0.2: the Susi AI OS development program
 The Board
   susi-tools board list [--limit <n>] [--json]
   susi-tools board check
-  susi-tools board post --kind <kind> --title <one line> [--body <text> | --body-file <file|->]
+  susi-tools board post --kind <kind> --title <one line> [--body <text>]
                         [--to <agent|all>] [--re <n>] [--task <id>]
 Tasks
-  susi-tools tasks list [--ref <ref>] [--json]
+  susi-tools tasks list [--json]
   susi-tools tasks claim <id> --scope <path>... [--hours <1-24>]
   susi-tools tasks release <id>
   susi-tools tasks close <id>
@@ -57,8 +57,7 @@ Any other command goes to the earlier program, installed beside this one as susi
 
 Every command also takes:
   --repo <path>    the repository: a checkout or worktree, or (for list) a bare repository
-                   (default: $SUSI_TOOLS_REPO, else the current directory)
-  --remote <name>  where the Board, claims and main live (default: origin)
+                   (default: the current directory); its origin holds main and the claims
   --agent <name>   who you are (default: $SUSI_AGENT, else git config susi.agent)
 
 What each writes: board post creates one numbered item; claim and release change your claim
@@ -98,15 +97,12 @@ impl From<String> for Failure {
 struct Options {
     positional: Vec<String>,
     repo: Option<PathBuf>,
-    remote: Option<String>,
     agent: Option<String>,
-    reference: Option<String>,
     limit: Option<usize>,
     json: bool,
     kind: Option<String>,
     title: Option<String>,
     body: Option<String>,
-    body_file: Option<String>,
     to: Option<String>,
     re: Option<u64>,
     task: Option<String>,
@@ -127,7 +123,7 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
             continue;
         }
         let name = arg.as_str();
-        if !allowed.contains(&name) && !["--repo", "--remote", "--agent"].contains(&name) {
+        if !allowed.contains(&name) && !["--repo", "--agent"].contains(&name) {
             return Err(Failure::Usage(format!("{name} does not apply here")));
         }
         if name == "--json" {
@@ -144,14 +140,11 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
         };
         match name {
             "--repo" => o.repo = Some(PathBuf::from(value)),
-            "--remote" => o.remote = Some(value),
             "--agent" => o.agent = Some(value),
-            "--ref" => o.reference = Some(value),
             "--limit" => o.limit = Some(number(&value)?.max(0) as usize),
             "--kind" => o.kind = Some(value),
             "--title" => o.title = Some(value),
             "--body" => o.body = Some(value),
-            "--body-file" => o.body_file = Some(value),
             "--to" => o.to = Some(value),
             "--re" => o.re = Some(number(&value)?.max(0) as u64),
             "--task" => o.task = Some(value),
@@ -167,12 +160,12 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
     Ok(o)
 }
 
+/// Where main, the claims and (for Susi) the Board live: each repository's `origin`.
+const REMOTE: &str = "origin";
+
 impl Options {
     fn path(&self) -> PathBuf {
-        self.repo
-            .clone()
-            .or_else(|| std::env::var_os("SUSI_TOOLS_REPO").map(PathBuf::from))
-            .unwrap_or_else(|| PathBuf::from("."))
+        self.repo.clone().unwrap_or_else(|| PathBuf::from("."))
     }
 
     /// The repository that holds the Board (Susi's), for work in `repo`.
@@ -181,28 +174,15 @@ impl Options {
     }
 
     fn repo(&self) -> Result<git::Repo, Failure> {
-        let path = self
-            .repo
-            .clone()
-            .or_else(|| std::env::var_os("SUSI_TOOLS_REPO").map(PathBuf::from))
-            .unwrap_or_else(|| PathBuf::from("."));
-        Ok(git::Repo::open(&path)?)
+        Ok(git::Repo::open(&self.path())?)
     }
 
-    fn remote(&self) -> String {
-        self.remote.clone().unwrap_or_else(|| "origin".into())
-    }
-
-    /// `--repo`, `--remote` and `--agent` as given, to pass on to the commands a command runs.
+    /// `--repo` and `--agent` as given, to pass on to the commands a command runs.
     fn common_args(&self) -> Vec<String> {
         let mut args = Vec::new();
         if let Some(repo) = &self.repo {
             args.push("--repo".to_owned());
             args.push(repo.display().to_string());
-        }
-        if let Some(remote) = &self.remote {
-            args.push("--remote".to_owned());
-            args.push(remote.clone());
         }
         if let Some(agent) = &self.agent {
             args.push("--agent".to_owned());
@@ -216,25 +196,6 @@ impl Options {
             [id] => Ok(id.clone()),
             _ => Err(Failure::Usage(format!("{what} takes one task id"))),
         }
-    }
-}
-
-fn read_body(o: &Options) -> Result<String, Failure> {
-    match (&o.body, &o.body_file) {
-        (Some(_), Some(_)) => Err(Failure::Usage(
-            "give --body or --body-file, not both".into(),
-        )),
-        (Some(body), None) => Ok(body.clone()),
-        (None, Some(file)) if file == "-" => {
-            let mut text = String::new();
-            std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)
-                .map_err(|e| Failure::Run(format!("reading the body from stdin: {e}")))?;
-            Ok(text.trim_end().to_owned())
-        }
-        (None, Some(file)) => std::fs::read_to_string(file)
-            .map(|t| t.trim_end().to_owned())
-            .map_err(|e| Failure::Run(format!("reading {file}: {e}"))),
-        (None, None) => Ok(String::new()),
     }
 }
 
@@ -307,11 +268,10 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let o = parse(rest, &["--limit", "--json"])?;
             let repo = o.repo()?;
             let limit = o.limit.unwrap_or(20);
-            let (items, last) = if o.repo.is_some() || std::env::var_os("SUSI_TOOLS_REPO").is_some()
-            {
+            let (items, last) = if o.repo.is_some() {
                 board::latest(&repo, limit)?
             } else {
-                check::recent_items(&o.board(&repo)?, "origin", limit)?
+                check::recent_items(&o.board(&repo)?, REMOTE, limit)?
             };
             if o.json {
                 println!("{}", board::to_json(&items).to_pretty());
@@ -327,31 +287,23 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let o = parse(rest, &[])?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
-            Ok(check::board_check(&o.board(&repo)?, "origin", &agent)?)
+            Ok(check::board_check(&o.board(&repo)?, REMOTE, &agent)?)
         }
         ["workflow", "check", ..] => {
             let o = parse(rest, &[])?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
             let board = o.board(&repo)?;
-            Ok(check::workflow_check(&repo, &o.remote(), &board, &agent)?)
+            Ok(check::workflow_check(&repo, REMOTE, &board, &agent)?)
         }
         ["board", "post", ..] => {
             let o = parse(
                 rest,
-                &[
-                    "--kind",
-                    "--title",
-                    "--body",
-                    "--body-file",
-                    "--to",
-                    "--re",
-                    "--task",
-                ],
+                &["--kind", "--title", "--body", "--to", "--re", "--task"],
             )?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
-            let body = read_body(&o)?;
+            let body = o.body.clone().unwrap_or_default();
             let kind = o
                 .kind
                 .clone()
@@ -362,7 +314,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 .ok_or_else(|| Failure::Usage("--title is required".into()))?;
             post_line(
                 &o.board(&repo)?,
-                "origin",
+                REMOTE,
                 &board::Post {
                     kind: &kind,
                     agent: &agent,
@@ -375,10 +327,10 @@ fn run(args: &[String]) -> Result<(), Failure> {
             )
         }
         ["tasks", "list", ..] => {
-            let o = parse(rest, &["--ref", "--json"])?;
+            let o = parse(rest, &["--json"])?;
             let repo = o.repo()?;
-            let reference = o.reference.clone().unwrap_or_else(|| "main".into());
-            let open = tasks::open(&repo, &reference, time::now_unix())?;
+            let reference = "main";
+            let open = tasks::open(&repo, reference, time::now_unix())?;
             if o.json {
                 println!("{}", tasks::to_json(&open).to_pretty());
             } else {
@@ -493,12 +445,11 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 .try_read(&["symbolic-ref", "--short", "-q", "HEAD"])
                 .map(|b| b.trim().to_owned())
                 .unwrap_or_default();
-            let remote = o.remote();
             // A task of Susi's queue may claim files here (Susi Tools, Susi Core).
             let queue = o.board(&repo).ok();
             let claim = claims::claim(
                 &repo,
-                &remote,
+                REMOTE,
                 &claims::Request {
                     task: &id,
                     agent: &agent,
@@ -512,17 +463,16 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 "{} claimed {} until unix {}",
                 claim.agent, claim.task, claim.lease_until_unix
             );
-            claim_post(&o.board(&repo)?, "origin", &claim)
+            claim_post(&o.board(&repo)?, REMOTE, &claim)
         }
         ["tasks", "release", ..] => {
             let o = parse(rest, &[])?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
             let id = o.one_id("tasks release")?;
-            let remote = o.remote();
-            if claims::release(&repo, &remote, &id, &agent)? {
+            if claims::release(&repo, REMOTE, &id, &agent)? {
                 println!("released {id}");
-                release_post(&o.board(&repo)?, "origin", &id, &agent::token(&agent)?)
+                release_post(&o.board(&repo)?, REMOTE, &id, &agent::token(&agent)?)
             } else {
                 println!("{id} has no claim to release");
                 Ok(())
@@ -543,8 +493,8 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let o = parse(args.get(1..).unwrap_or(&[]), &[])?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
-            let remote = o.remote();
-            match ship::ship(&repo, &remote)? {
+            let remote = REMOTE;
+            match ship::ship(&repo, remote)? {
                 ship::Shipped::Nothing(tip) => {
                     println!(
                         "nothing to ship: {remote}'s main ({}) already has it",
@@ -570,7 +520,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                     let board = o.board(&repo)?;
                     post_line(
                         &board,
-                        "origin",
+                        REMOTE,
                         &board::Post {
                             kind: "landed",
                             agent: &agent,
@@ -581,7 +531,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                             task: shipped.first().map(String::as_str),
                         },
                     )?;
-                    after_ship(&repo, &remote, &board, &agent)
+                    after_ship(&repo, remote, &board, &agent)
                 }
             }
         }
