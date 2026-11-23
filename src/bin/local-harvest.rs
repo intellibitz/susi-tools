@@ -26,18 +26,13 @@ fn main() -> ExitCode {
     if args.first().map(String::as_str) != Some("audit") {
         return forward(&args);
     }
-    let json = args.iter().any(|arg| arg == "--json");
     let report = std::env::current_dir()
         .map_err(|e| e.to_string())
         .and_then(|cwd| harvest::run_audit(&cwd, &args[1..]));
     match report {
         Ok(report) if report.ok => {
-            println!("{}", if json { &report.json } else { &report.text });
+            println!("{}", report.text);
             ExitCode::SUCCESS
-        }
-        Ok(report) if json => {
-            println!("{}", report.json);
-            ExitCode::FAILURE
         }
         Ok(report) => {
             eprintln!("local-harvest: {}", report.text);

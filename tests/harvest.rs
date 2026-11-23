@@ -167,10 +167,13 @@ fn a_clean_ledger_passes_and_counts_its_citation() {
         String::from_utf8_lossy(&out.stdout).trim(),
         "harvest audit passed: 1 manifest(s), 1 file(s), 1 Harvest-trailer commit(s); 0 retired record(s); 1 citation(s): 1 live, 0 retired, 0 corrected, 0 refused"
     );
-    let json = repo.audit(&["--range", "HEAD", "--json"]);
-    assert!(json.status.success());
-    assert!(String::from_utf8_lossy(&json.stdout)
-        .starts_with("{\"ok\":true,\"manifests\":1,\"files\":1,"));
+    let json = repo.audit(&["--json"]);
+    assert!(!json.status.success(), "--json is not an option of audit");
+    assert!(
+        text(&json).contains("unknown option --json for audit"),
+        "{}",
+        text(&json)
+    );
 }
 
 #[test]

@@ -52,11 +52,10 @@ const REJECT_PHRASES: [&str; 7] = [
     "Commons Clause",
 ];
 
-/// What one audit found: whether it passed, its text, and the same as JSON.
+/// What one audit found: whether it passed, and its text.
 pub struct Report {
     pub ok: bool,
     pub text: String,
-    pub json: String,
 }
 
 // ---------------------------------------------------------------- git, in batches
@@ -1806,28 +1805,15 @@ pub fn audit(cwd: &Path, range: Option<&str>) -> Result<Report> {
             violations.join("\n  ")
         )
     };
-    let listed: Vec<String> = violations.iter().map(|v| json::quote(v)).collect();
-    let json = format!(
-        "{{\"ok\":{ok},\"manifests\":{},\"files\":{files},\"harvest_trailer_commits\":{},\"retired\":{},\"citations\":{{\"total\":{citations},\"live\":{},\"retired\":{},\"corrected\":{},\"refused\":{}}},\"violations\":[{}]}}",
-        manifests.len(),
-        cited.commits,
-        retired.len(),
-        cited.live,
-        cited.retired,
-        cited.corrected,
-        cited.refused,
-        listed.join(",")
-    );
-    Ok(Report { ok, text, json })
+    Ok(Report { ok, text })
 }
 
-/// `audit [--range <A..B>] [--json]`, as the earlier `local-harvest audit` took it.
+/// `audit [--range <A..B>]`, as the earlier `local-harvest audit` took it.
 pub fn run_audit(cwd: &Path, args: &[String]) -> Result<Report> {
     let mut range = None;
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
-            "--json" => {}
             "--range" => {
                 range = Some(
                     rest.next()
