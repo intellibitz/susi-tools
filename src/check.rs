@@ -16,16 +16,7 @@ pub fn recent_items(
     remote: &str,
     limit: usize,
 ) -> Result<(Vec<board::Item>, u64), String> {
-    let mut numbered: Vec<(u64, String)> = repo
-        .remote_refs(remote, &["refs/board/items/*"])?
-        .into_iter()
-        .filter_map(|(name, oid)| {
-            name.strip_prefix(board::ITEMS)
-                .and_then(|n| n.parse::<u64>().ok())
-                .map(|n| (n, oid))
-        })
-        .collect();
-    numbered.sort_by_key(|(n, _)| *n);
+    let numbered = board::numbered(repo.remote_refs(remote, &["refs/board/items/*"])?);
     let last = numbered.last().map_or(0, |(n, _)| *n);
     let chosen = &numbered[numbered.len().saturating_sub(limit)..];
     if chosen.is_empty() {

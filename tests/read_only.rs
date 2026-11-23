@@ -250,13 +250,6 @@ fn open_tasks_show_live_and_lapsed_claims_and_skip_finished_records() {
         !out.contains("finished"),
         "a finished record was listed: {out}"
     );
-    let (_, json, _) = fx.run(&["tasks", "list", "--repo", work.to_str().unwrap(), "--json"]);
-    assert!(
-        json.contains("\"claimed_by\": \"ALPHA\"")
-            && json.contains("\"lapsed_claim_by\": \"BETA\""),
-        "{json}"
-    );
-    assert!(json.contains("\"accept\": \"cargo test\""), "{json}");
 }
 
 /// Every file under `dir` with its size and modification time, except the program's own copy
@@ -307,7 +300,6 @@ fn reading_writes_nothing_in_the_checkout() {
     for args in [
         vec!["board", "list", "--repo", work.to_str().unwrap()],
         vec!["tasks", "list", "--repo", work.to_str().unwrap()],
-        vec!["tasks", "list", "--repo", work.to_str().unwrap(), "--json"],
     ] {
         let (code, _, err) = fx.run(&args);
         assert_eq!(code, 0, "{args:?}: {err}");

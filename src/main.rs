@@ -32,7 +32,7 @@ The Board
   susi-tools board post --kind <kind> --title <one line> [--body <text>]
                         [--to <agent|all>] [--re <n>] [--task <id>]
 Tasks
-  susi-tools tasks list [--json]
+  susi-tools tasks list
   susi-tools tasks claim <id> --scope <path>... [--hours <1-24>]
   susi-tools tasks release <id>
   susi-tools tasks close <id>
@@ -100,7 +100,6 @@ struct Options {
     repo: Option<PathBuf>,
     agent: Option<String>,
     limit: Option<usize>,
-    json: bool,
     kind: Option<String>,
     title: Option<String>,
     body: Option<String>,
@@ -126,10 +125,6 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
         let name = arg.as_str();
         if !allowed.contains(&name) && !["--repo", "--agent"].contains(&name) {
             return Err(Failure::Usage(format!("{name} does not apply here")));
-        }
-        if name == "--json" {
-            o.json = true;
-            continue;
         }
         let value = it
             .next()
@@ -312,29 +307,25 @@ fn run(args: &[String]) -> Result<(), Failure> {
             )
         }
         ["tasks", "list", ..] => {
-            let o = parse(rest, &["--json"])?;
+            let o = parse(rest, &[])?;
             let repo = o.repo()?;
             // The remote's main and claims as they are now, not the checkout's own main.
             let main = tasks::fetch_main(&repo, REMOTE)?;
             let open = tasks::open(&repo, &main, time::now_unix())?;
-            if o.json {
-                println!("{}", tasks::to_json(&open).to_pretty());
-            } else {
-                println!("{} open task(s) at {REMOTE}'s main", open.len());
-                for t in &open {
-                    let holder = match (&t.claim, t.live) {
-                        (Some(c), true) => format!("claimed by {}", c.text("agent")),
-                        (Some(c), false) => format!("claim by {} lapsed", c.text("agent")),
-                        (None, _) => "unclaimed".to_owned(),
-                    };
-                    println!(
-                        "  {:<22} {:<2} {:<26} {}",
-                        t.id,
-                        t.record.text("size"),
-                        holder,
-                        t.record.text("title")
-                    );
-                }
+            println!("{} open task(s) at {REMOTE}'s main", open.len());
+            for t in &open {
+                let holder = match (&t.claim, t.live) {
+                    (Some(c), true) => format!("claimed by {}", c.text("agent")),
+                    (Some(c), false) => format!("claim by {} lapsed", c.text("agent")),
+                    (None, _) => "unclaimed".to_owned(),
+                };
+                println!(
+                    "  {:<22} {:<2} {:<26} {}",
+                    t.id,
+                    t.record.text("size"),
+                    holder,
+                    t.record.text("title")
+                );
             }
             Ok(())
         }

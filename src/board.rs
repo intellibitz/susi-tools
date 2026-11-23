@@ -8,9 +8,8 @@ use crate::json::Json;
 pub const ITEMS: &str = "refs/board/items/";
 pub const SCHEMA: &str = "susi-board-item-v1";
 /// The kinds of item an agent may post.
-pub const KINDS: [&str; 10] = [
-    "claim", "landed", "cut", "heads-up", "request", "answer", "handoff", "decision", "blocked",
-    "note",
+pub const KINDS: [&str; 9] = [
+    "claim", "landed", "heads-up", "request", "answer", "handoff", "decision", "blocked", "note",
 ];
 
 pub struct Item {
@@ -18,7 +17,8 @@ pub struct Item {
     pub body: Json,
 }
 
-fn numbered(pairs: Vec<(String, String)>) -> Vec<(u64, String)> {
+/// `(number, object id)` of the Board items among `pairs` (`(refname, object id)`), in order.
+pub fn numbered(pairs: Vec<(String, String)>) -> Vec<(u64, String)> {
     let mut numbered: Vec<(u64, String)> = pairs
         .into_iter()
         .filter_map(|(name, oid)| {

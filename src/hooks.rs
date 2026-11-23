@@ -31,8 +31,6 @@ pub const MARKER: &str = ".susi-agent-root";
 pub const MARKER_SCHEMA: &str = "susi-agent-root-v1";
 /// Commits a checkout may lag behind the remote's `main` before a commit is refused.
 pub const DEFAULT_MAX_BEHIND: u64 = 20;
-/// Task records created at or after this time owe a reuse decision; older ones never do.
-pub const REUSE_ENFORCED_UNIX: i64 = 1_794_483_000;
 /// The reuse decisions a task record may state.
 pub const REUSE_DECISIONS: [&str; 4] = ["existing", "harvest", "dependency", "build"];
 
@@ -246,13 +244,6 @@ pub fn tasks_in_message(message: &str) -> Vec<String> {
 
 /// What a task record's `reuse` object is missing, when it owes one.
 pub fn reuse_gap(record: &Json) -> Option<&'static str> {
-    let created = record
-        .get("created_unix")
-        .and_then(Json::as_i64)
-        .unwrap_or(0);
-    if created < REUSE_ENFORCED_UNIX {
-        return None;
-    }
     let size = record.text("size").to_ascii_lowercase();
     if matches!(size.as_str(), "xs" | "s") {
         return None;
@@ -357,9 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn reuse_is_owed_only_by_sized_tasks_created_after_the_rule() {
-        let old = record(r#"{"created_unix":1,"size":"m"}"#);
-        assert_eq!(reuse_gap(&old), None);
+    fn reuse_is_owed_only_by_sized_tasks() {
         let small = record(r#"{"created_unix":1795000000,"size":"s"}"#);
         assert_eq!(reuse_gap(&small), None);
         let owed = record(r#"{"created_unix":1795000000,"size":"m"}"#);
