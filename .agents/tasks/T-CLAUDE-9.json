@@ -15,5 +15,10 @@
     ]
   },
   "created_by": "CLAUDE",
-  "created_unix": 1795465106
+  "created_unix": 1795465106,
+  "reuse": {
+    "decision": "existing",
+    "searched": "Susi Tools' ship (a fast-forward of main), the pre-push rule that already lets an agent publish to refs/agents/<name> moving forward only, claims (a task must be open on main), the Board's post, and gates (T-CLAUDE-7); the cloud probe of 2026-11-24 (Susi's docs/cloud-agents.md): a cloud machine reaches and pushes Artifacts, but its 4 cores take 37.6 s for the gates",
+    "reason": "Landing reuses ship's checks, the agent ref the hooks already allow, gates and the Board; new are a landing mode for ship, a claim that finds the task in the agent's own work, and `land`, which gates and fast-forwards main on a host's cores. No dependency."
+  }
 }
