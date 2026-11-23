@@ -1,0 +1,19 @@
+{
+  "id": "T-CLAUDE-1",
+  "title": "Cut Susi Tools code no Susi development uses; add local-harvest notices",
+  "goal": "Every line of Susi Tools traces to Susi's development (CEO, 2026-11-22). An audit of 2026-11-23 found commands, options and read paths nothing calls: cut them, with their tests and docs. Fix what the audit suspected in tasks list (a stale local main) and in the hooks (the index a partial commit uses). Add the local-harvest notices command that Susi's ledger, its release gate and the audit tell people to run, which fails on Linux today.",
+  "size": "m",
+  "deps": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--workspace",
+      "--offline",
+      "--locked"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795416219
+}
