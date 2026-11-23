@@ -73,7 +73,10 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     `pre-push` lets through only `main` (forward only), `refs/agents/<name>`,
     `vX.Y.Z` tags (created once), the task queue's blobs and Board items
     (created once); `post-checkout` lists finished worktrees after `git
-    worktree add`. A repository's hook adds what it needs: `--worktrees` (no
+    worktree add`. The staged files are the ones being committed: under `git
+    commit -a` or `git commit <path>`, those of the index Git names for the
+    hook (until 2026-11-23 the hooks read the repository's own index there,
+    and missed them). A repository's hook adds what it needs: `--worktrees` (no
     commit in a primary checkout or straight on `main`), `--isolation` (the
     agent's own `SUSI_HOME`, build target and scratch, outside every checkout)
     and `--token-prefix <prefix>` (its own licence tokens count as secrets).
@@ -105,7 +108,7 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 65, on made-up repositories and records only, run on Linux before every ship:
+  - **Tests:** 66, on made-up repositories and records only, run on Linux before every ship:
     0.5 s for the tests on the laptop's CachyOS system (`cargo nextest run`, warm, 2026-11-23);
     from Windows through WSL2 (`scripts/linux-suite.ps1` below) about 2.5 s for the tests, 4.5
     to 4.8 s for the whole run with nothing changed and 7.4 to 9.0 s after a one-file edit

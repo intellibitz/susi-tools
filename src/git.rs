@@ -22,6 +22,27 @@ pub struct Repo {
     fetched: Rc<RefCell<HashSet<String>>>,
 }
 
+/// The index Git named for the hook stage this run is (see `keep_hook_index`).
+static HOOK_INDEX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Keep the index Git hands a hook (`GIT_INDEX_FILE`) for every git this run starts, which
+/// otherwise drops the caller's Git variables. During `git commit -a` or `git commit <path>` that
+/// index, not the repository's own, holds what is being committed, so the staged files a hook
+/// checks are read from it. Only a hook stage asks for this: Git sets the variable for the hook,
+/// for this repository.
+pub fn keep_hook_index() {
+    let Some(index) = std::env::var_os("GIT_INDEX_FILE").filter(|v| !v.is_empty()) else {
+        return;
+    };
+    let index = PathBuf::from(index);
+    // Git names it relative to the top of the work tree, where it runs its hooks, if at all.
+    let index = match std::env::current_dir() {
+        Ok(here) if index.is_relative() => here.join(index),
+        _ => index,
+    };
+    let _ = HOOK_INDEX.set(index);
+}
+
 thread_local! {
     /// What `Repo::open` found this run, by the path asked for: one `rev-parse` per repository
     /// per run, however many steps of a command open it (`tasks start` is an add, a ship and a
@@ -377,7 +398,8 @@ fn pairs(text: &str) -> Vec<(String, String)> {
 }
 
 /// `git` with the caller's Git routing removed, so a stray `GIT_DIR` or `GIT_INDEX_FILE` can
-/// never point a read or a write at another repository, and with no optional locks taken.
+/// never point a read or a write at another repository, and with no optional locks taken; in a
+/// hook stage, the index Git named for the hook is kept (`keep_hook_index`).
 /// The program is the real `git` (`git_program`), never Git for Windows' launcher.
 fn base_command() -> Command {
     let mut command = Command::new(crate::git_program::path());
@@ -390,6 +412,9 @@ fn base_command() -> Command {
         {
             command.env_remove(&name);
         }
+    }
+    if let Some(index) = HOOK_INDEX.get() {
+        command.env("GIT_INDEX_FILE", index);
     }
     command
         .env("GIT_OPTIONAL_LOCKS", "0")

@@ -88,6 +88,8 @@ pub fn run_cli(args: &[&str]) -> Result<(), Stop> {
             other => rest.push(other),
         }
     }
+    // What `git commit -a` or `git commit <path>` is committing is in the index Git names here.
+    crate::git::keep_hook_index();
     let cwd = std::env::current_dir().map_err(|e| format!("no current folder: {e}"))?;
     let repo = Repo::open(&cwd)?;
     match rest.as_slice() {

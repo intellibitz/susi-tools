@@ -140,6 +140,51 @@ impl Fixture {
         child.wait_with_output().unwrap()
     }
 
+    /// `git commit <args>` in the clone with only `stages` installed, each as the one-line hook
+    /// Susi's and Susi Core's repositories have, calling this build; the environment is the one
+    /// `hook` gives, plus `env`.
+    fn commit_through(&self, stages: &[&str], args: &[&str], env: &[(&str, &str)]) -> Output {
+        let hooks = self.root.join(format!("hooks-{}", stages.join("-")));
+        std::fs::create_dir_all(&hooks).unwrap();
+        let program = env!("CARGO_BIN_EXE_susi-tools").replace('\\', "/");
+        for stage in stages {
+            let file = hooks.join(stage);
+            std::fs::write(
+                &file,
+                format!("#!/bin/sh\nexec \"{program}\" hook {stage} \"$@\"\n"),
+            )
+            .unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+        let mut cmd = Command::new(git_program::path());
+        cmd.current_dir(self.work())
+            .arg("-c")
+            .arg(format!("core.hooksPath={}", hooks.display()))
+            .arg("commit")
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("HOME", &self.root);
+        for var in [
+            "SUSI_AGENT",
+            "SUSI_ALLOW_FOREIGN_ROOT",
+            "SUSI_ALLOW_STALE",
+            "SUSI_ALLOW_NO_REUSE",
+            "SUSI_ALLOW_PRIMARY",
+            "SUSI_ALLOW_MAIN",
+        ] {
+            cmd.env_remove(var);
+        }
+        for (name, value) in env {
+            cmd.env(name, value);
+        }
+        cmd.output().unwrap()
+    }
+
     fn message(&self, text: &str) -> String {
         let path = self.root.join("MSG");
         std::fs::write(&path, text).unwrap();
@@ -520,6 +565,50 @@ fn commit_msg_wants_a_task_recorded_or_claimed_here_and_keeps_to_the_claim() {
     fx.git(&work, &["reset", "-q"]);
     fx.git(&work, &["add", ".agents/tasks/T-A-1.json"]);
     assert!(run("chore(tasks): add T-A-1\n", &[]).status.success());
+}
+
+#[test]
+fn the_hooks_check_the_index_being_committed_by_commit_a_and_commit_path() {
+    let fx = Fixture::new("index");
+    let work = fx.work();
+    fx.write("docs/b.md", "b\n");
+    fx.git(&work, &["add", "-A"]);
+    fx.git(&work, &["commit", "-q", "-m", "docs"]);
+    fx.git(&work, &["push", "-q", "origin", "HEAD:main"]);
+
+    // `git commit -a` stages a tracked file into a temporary index: pre-commit checks that one.
+    fx.write("first.txt", &format!("token = ghp_{}\n", "a".repeat(36)));
+    let all = fx.commit_through(&["pre-commit"], &["-q", "-a", "-m", "feat: x"], &[]);
+    assert!(!all.status.success(), "a secret went in with commit -a");
+    assert!(
+        err(&all).contains("Secrets never enter source"),
+        "{}",
+        err(&all)
+    );
+    fx.git(&work, &["checkout", "--", "first.txt"]);
+
+    // `git commit <path>` commits that path alone, whatever else is staged: commit-msg checks
+    // the claim's scope against what is committed.
+    fx.claim("T-B-2", "alpha", &["src"]);
+    fx.write("src/a.rs", "pub fn a() {}\n");
+    fx.git(&work, &["add", "src/a.rs"]);
+    fx.write("docs/b.md", "b, changed\n");
+    let path = fx.commit_through(
+        &["commit-msg"],
+        &["-q", "-m", "feat: x\n\nTask: T-B-2", "--", "docs/b.md"],
+        &[("SUSI_AGENT", "alpha")],
+    );
+    assert!(
+        !path.status.success(),
+        "a file outside the claim went in with commit <path>"
+    );
+    assert!(err(&path).contains("docs/b.md"), "{}", err(&path));
+    let scoped = fx.commit_through(
+        &["commit-msg"],
+        &["-q", "-m", "feat: x\n\nTask: T-B-2", "--", "src/a.rs"],
+        &[("SUSI_AGENT", "alpha")],
+    );
+    assert!(scoped.status.success(), "{}", err(&scoped));
 }
 
 #[test]
