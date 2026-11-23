@@ -14,5 +14,10 @@
     ]
   },
   "created_by": "CLAUDE",
-  "created_unix": 1795433791
+  "created_unix": 1795433791,
+  "reuse": {
+    "decision": "existing",
+    "searched": "The compiler's dead-code lint over both programs and every test target (a binary crate reports an unused pub item, checked with a planted one); callers in Susi, Susi Core, their .githooks and docs, and the Board's 4,600 items for each command, option and setting; Susi's AGENTS.md for the rules the mandate numbers stood for; Susi's docs/agent-vault.md for what the last sweep kept for the Windows host; Susi Core's .githooks for how a public repository's push reaches its firewall.",
+    "reason": "Removal and rewording only, plus a one-line pre-push hook that calls the existing susi-tools hook pre-push; nothing new is built."
+  }
 }
