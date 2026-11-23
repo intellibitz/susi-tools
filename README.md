@@ -100,15 +100,21 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     on Susi's ledger (14 manifests, 46 retired records, 51 citations over 3,026
     commits) it gives the earlier program's answer to the character in 0.8 s
     warm with 12 git processes, where the earlier one took 4.8 s with 89.
+    `local-harvest notices [--check]` (since 2026-11-23) writes the
+    `THIRD_PARTY_NOTICES` the audit expects, as the earlier program did and as
+    Susi's notices file, release gate and this audit tell people to run, or
+    with `--check` only says whether it is current; on Susi's ledger at
+    `d709cc59` (13 manifests) it writes Susi's file byte for byte.
     `local-harvest`'s other commands still go to the earlier program, installed
-    beside it as `local-harvest-legacy`.
+    beside it as `local-harvest-legacy` (on Linux, where it is not installed,
+    they are refused).
   - **Same formats as the earlier program**, so both read each other's work.
     Checked on 2026-11-22 on Susi's live Board and queue: the earlier program
     read this program's claim (holder, lease, scopes), listed its Board
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 66, on made-up repositories and records only, run on Linux before every ship:
+  - **Tests:** 67, on made-up repositories and records only, run on Linux before every ship:
     0.5 s for the tests on the laptop's CachyOS system (`cargo nextest run`, warm, 2026-11-23);
     from Windows through WSL2 (`scripts/linux-suite.ps1` below) about 2.5 s for the tests, 4.5
     to 4.8 s for the whole run with nothing changed and 7.4 to 9.0 s after a one-file edit

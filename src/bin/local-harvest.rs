@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `local-harvest`, the name Susi's release gate and history call the harvest tool by. Its
-//! `audit` is Susi Tools' rebuilt one (`src/harvest.rs`), the same checks and messages
-//! asked of Git in batches; every other command (`intake`, `scan`, `import`, `notices`,
-//! `route`, `pickup`, `raw-features`, `harvested-by`) goes to the earlier program, installed
-//! beside this one as `local-harvest-legacy` (or named by `LOCAL_HARVEST_LEGACY`), until it is
-//! rebuilt too.
+//! `audit` and `notices` are Susi Tools' rebuilt ones (`src/harvest.rs`), with the earlier
+//! program's checks, messages and output, asked of Git in batches; every other command
+//! (`intake`, `scan`, `import`, `route`, `pickup`, `raw-features`, `harvested-by`) goes to the
+//! earlier program, installed beside this one as `local-harvest-legacy` (or named by
+//! `LOCAL_HARVEST_LEGACY`), until it is rebuilt too.
 #![forbid(unsafe_code)]
 
 #[path = "../git_program.rs"]
@@ -12,7 +12,7 @@ mod git_program;
 #[path = "../harvest.rs"]
 mod harvest;
 #[path = "../json.rs"]
-#[allow(dead_code)] // The audit reads JSON; the writing half serves susi-tools.
+#[allow(dead_code)] // local-harvest only reads JSON; the writing half serves susi-tools.
 mod json;
 #[path = "../sha256.rs"]
 mod sha256;
@@ -22,12 +22,14 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) != Some("audit") {
-        return forward(&args);
-    }
+    let command = match args.first().map(String::as_str) {
+        Some("audit") => harvest::run_audit,
+        Some("notices") => harvest::run_notices,
+        _ => return forward(&args),
+    };
     let report = std::env::current_dir()
         .map_err(|e| e.to_string())
-        .and_then(|cwd| harvest::run_audit(&cwd, &args[1..]));
+        .and_then(|cwd| command(&cwd, &args[1..]));
     match report {
         Ok(report) if report.ok => {
             println!("{}", report.text);
@@ -61,7 +63,7 @@ fn forward(args: &[String]) -> ExitCode {
         });
     let Some(legacy) = legacy else {
         eprintln!(
-            "local-harvest: only `audit` is rebuilt; install the earlier program as local-harvest-legacy for {:?}",
+            "local-harvest: only `audit` and `notices` are rebuilt; install the earlier program as local-harvest-legacy for {:?}",
             args.first().map(String::as_str).unwrap_or("")
         );
         return ExitCode::from(2);

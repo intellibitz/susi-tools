@@ -41,7 +41,7 @@ Tasks
   susi-tools tasks finish <id>   close the task (its acceptance runs) and ship: one command
 Shipping
   susi-tools ship
-Harvested code: the audit is the second program, local-harvest audit [--range <A..B>]
+Harvested code: the second program, local-harvest audit [--range <A..B>] | notices [--check]
 The session start
   susi-tools workflow check      fast-forward a clean checkout, show what is addressed to you,
                                  say what you hold

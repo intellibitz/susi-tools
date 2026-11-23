@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `local-harvest audit` (Susi Tools' rebuilt harvest audit) against made-up repositories: what
 //! passes, what each rule refuses, and that retired records and citations are judged against
-//! Git. The ledger format is Susi's (`susi-harvest-manifest-v1`).
+//! Git; and `local-harvest notices`, which writes the notices the audit expects. The ledger
+//! format is Susi's (`susi-harvest-manifest-v1`).
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -67,9 +68,13 @@ impl Repo {
     }
 
     fn audit(&self, args: &[&str]) -> Output {
+        self.local_harvest("audit", args)
+    }
+
+    fn local_harvest(&self, command: &str, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_local-harvest"))
             .current_dir(&self.root)
-            .arg("audit")
+            .arg(command)
             .args(args)
             .env_remove("LOCAL_HARVEST_LEGACY")
             .output()
@@ -219,6 +224,61 @@ fn notices_must_be_exactly_what_the_manifests_render() {
 }
 
 #[test]
+fn notices_writes_what_the_manifests_render_and_check_only_says_so() {
+    let (repo, upstream) = harvested("write-notices");
+    let file = repo.root.join("THIRD_PARTY_NOTICES");
+    let said = |out: &Output| text(out).trim().to_owned();
+    let check = repo.local_harvest("notices", &["--check"]);
+    assert!(check.status.success(), "{}", text(&check));
+    assert_eq!(said(&check), "THIRD_PARTY_NOTICES is current (1 manifests)");
+    let same = repo.local_harvest("notices", &[]);
+    assert_eq!(said(&same), "THIRD_PARTY_NOTICES unchanged");
+
+    repo.write("THIRD_PARTY_NOTICES", "hand-edited\n");
+    let stale = repo.local_harvest("notices", &["--check"]);
+    assert!(!stale.status.success());
+    assert_eq!(
+        said(&stale),
+        "local-harvest: THIRD_PARTY_NOTICES is stale; run `local-harvest notices`"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "hand-edited\n");
+    let written = repo.local_harvest("notices", &[]);
+    assert!(written.status.success(), "{}", text(&written));
+    assert_eq!(said(&written), "THIRD_PARTY_NOTICES written");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), notices(&upstream));
+    assert!(
+        repo.audit(&[]).status.success(),
+        "the audit takes what notices wrote"
+    );
+
+    std::fs::remove_file(&file).unwrap();
+    let missing = repo.local_harvest("notices", &["--check"]);
+    assert!(text(&missing).contains("THIRD_PARTY_NOTICES is missing"));
+    assert!(!file.exists(), "a check writes nothing");
+
+    // From a folder inside the work tree, the notices are the work tree's; an invalid manifest
+    // refuses, and nothing is written.
+    std::fs::create_dir_all(repo.root.join("src/deep")).unwrap();
+    let inside = Command::new(env!("CARGO_BIN_EXE_local-harvest"))
+        .current_dir(repo.root.join("src/deep"))
+        .arg("notices")
+        .output()
+        .unwrap();
+    assert!(inside.status.success(), "{}", text(&inside));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), notices(&upstream));
+    repo.write(".agents/harvest/H-TEST-2.json", "{ not json");
+    std::fs::remove_file(&file).unwrap();
+    let invalid = repo.local_harvest("notices", &[]);
+    assert!(!invalid.status.success());
+    assert!(
+        text(&invalid).contains("cannot generate THIRD_PARTY_NOTICES; invalid manifests"),
+        "{}",
+        text(&invalid)
+    );
+    assert!(!file.exists());
+}
+
+#[test]
 fn a_destination_and_its_upstream_blob_must_both_be_there() {
     let (repo, upstream) = harvested("missing");
     std::fs::remove_file(repo.root.join("src/a.rs")).unwrap();
@@ -311,11 +371,11 @@ fn a_removed_harvest_is_retired_with_its_commit_and_date() {
 #[test]
 fn other_commands_go_to_the_earlier_program() {
     let out = Command::new(env!("CARGO_BIN_EXE_local-harvest"))
-        .arg("notices")
+        .arg("intake")
         .env_remove("LOCAL_HARVEST_LEGACY")
         .env("PATH", std::env::temp_dir())
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("only `audit` is rebuilt"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("only `audit` and `notices` are rebuilt"));
 }

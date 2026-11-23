@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `harvest audit`: the legal ledger of harvested Apache-2.0 code, checked against Git.
+//! `local-harvest audit`: the legal ledger of harvested Apache-2.0 code, checked against Git;
+//! and `local-harvest notices`, which writes the `THIRD_PARTY_NOTICES` the audit expects.
 //!
 //! The same checks, messages and output as the audit of the earlier `local-harvest` program
 //! (Susi's `tools/core-xtask/src/harvest.rs` and its `harvest_retired.rs` and
@@ -52,7 +53,7 @@ const REJECT_PHRASES: [&str; 7] = [
     "Commons Clause",
 ];
 
-/// What one audit found: whether it passed, and its text.
+/// What one command found or did: whether it passed, and its text.
 pub struct Report {
     pub ok: bool,
     pub text: String,
@@ -1806,6 +1807,64 @@ pub fn audit(cwd: &Path, range: Option<&str>) -> Result<Report> {
         )
     };
     Ok(Report { ok, text })
+}
+
+/// `notices [--check]`, as the earlier `local-harvest notices` took it and with its words:
+/// write `THIRD_PARTY_NOTICES` at the top of the work tree as the manifests render it (Apache-2.0
+/// 4(d)), unless it already is; with `--check`, write nothing and say whether it is current,
+/// stale or missing. Invalid manifests refuse both, and nothing is written.
+pub fn run_notices(cwd: &Path, args: &[String]) -> Result<Report> {
+    let check = match args {
+        [] => false,
+        [flag] if flag == "--check" => true,
+        [other, ..] => return Err(format!("unknown option {other} for notices")),
+    };
+    let git = Git::open(cwd)?;
+    let (manifests, errors) = load_manifests(&git.root);
+    if !errors.is_empty() {
+        let text = if check {
+            format!("invalid manifests:\n  {}", errors.join("\n  "))
+        } else {
+            format!(
+                "cannot generate {NOTICES_FILE}; invalid manifests:\n  {}",
+                errors.join("\n  ")
+            )
+        };
+        return Ok(Report { ok: false, text });
+    }
+    let expected = render_notices(&manifests);
+    let path = git.root.join(NOTICES_FILE);
+    let on_disk = normalized_disk_text(&path);
+    if !check {
+        if on_disk.as_deref() == Some(expected.as_str()) {
+            return Ok(Report {
+                ok: true,
+                text: format!("{NOTICES_FILE} unchanged"),
+            });
+        }
+        fs::write(&path, expected.as_bytes())
+            .map_err(|e| format!("cannot write {NOTICES_FILE}: {e}"))?;
+        return Ok(Report {
+            ok: true,
+            text: format!("{NOTICES_FILE} written"),
+        });
+    }
+    let state = match on_disk {
+        Some(text) if text == expected => None,
+        None if manifests.is_empty() => None,
+        Some(_) => Some("stale"),
+        None => Some("missing"),
+    };
+    Ok(match state {
+        None => Report {
+            ok: true,
+            text: format!("{NOTICES_FILE} is current ({} manifests)", manifests.len()),
+        },
+        Some(word) => Report {
+            ok: false,
+            text: format!("{NOTICES_FILE} is {word}; run `local-harvest notices`"),
+        },
+    })
 }
 
 /// `audit [--range <A..B>]`, as the earlier `local-harvest audit` took it.
