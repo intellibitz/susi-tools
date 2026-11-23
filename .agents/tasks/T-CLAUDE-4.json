@@ -1,0 +1,20 @@
+{
+  "id": "T-CLAUDE-4",
+  "title": "Say where the ecosystem lives: Cloudflare, with GitHub and GitLab as storage",
+  "goal": "CEO 2026-11-23: Cloudflare is the primary cloud; GitHub and GitLab are storage and branding only; the laptop dependency is removed.",
+  "size": "xs",
+  "deps": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked",
+      "-E",
+      "test(firewall)"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795424382
+}
