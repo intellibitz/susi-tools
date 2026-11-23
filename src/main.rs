@@ -701,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn any_other_first_git_is_left_to_path_as_before() {
+    fn any_other_first_git_is_left_to_path() {
         let root = install("other", true);
         // A git that is not the launcher comes first on the path: it is the one started.
         touch(&root.join("scoop/shims/git.exe"));
