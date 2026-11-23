@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `susi-tools hook <stage>`, what the Git hooks of Susi and Susi Core run, and the agent root
+//! `susi-tools hook <stage>`, what the Git hooks of Susi and Susi Tools run, and the agent root
 //! the root rule checks (`workflow root init`), driven end to end against made-up repositories.
 
 use std::io::Write;
@@ -121,8 +121,6 @@ impl Fixture {
             "SUSI_ALLOW_FOREIGN_ROOT",
             "SUSI_ALLOW_STALE",
             "SUSI_ALLOW_NO_REUSE",
-            "SUSI_ALLOW_PRIMARY",
-            "SUSI_ALLOW_MAIN",
             "SUSI_ALLOW_SHARED_HOME",
         ] {
             cmd.env_remove(var);
@@ -141,7 +139,7 @@ impl Fixture {
     }
 
     /// `git commit <args>` in the clone with only `stages` installed, each as the one-line hook
-    /// Susi's and Susi Core's repositories have, calling this build; the environment is the one
+    /// Susi's and Susi Tools' repositories have, calling this build; the environment is the one
     /// `hook` gives, plus `env`.
     fn commit_through(&self, stages: &[&str], args: &[&str], env: &[(&str, &str)]) -> Output {
         let hooks = self.root.join(format!("hooks-{}", stages.join("-")));
@@ -174,8 +172,6 @@ impl Fixture {
             "SUSI_ALLOW_FOREIGN_ROOT",
             "SUSI_ALLOW_STALE",
             "SUSI_ALLOW_NO_REUSE",
-            "SUSI_ALLOW_PRIMARY",
-            "SUSI_ALLOW_MAIN",
         ] {
             cmd.env_remove(var);
         }
@@ -295,69 +291,6 @@ fn pre_commit_refuses_secrets_new_large_blobs_debug_calls_and_unequal_pointers()
         "{}",
         err(&pointers)
     );
-}
-
-#[test]
-fn the_worktree_rule_applies_where_a_repository_asks_for_it() {
-    let fx = Fixture::new("worktrees");
-    let work = fx.work();
-    fx.write("a.txt", "a\n");
-    fx.git(&work, &["add", "-A"]);
-    let anywhere = fx.hook(&work, &["pre-commit"], "", &[]);
-    assert!(anywhere.status.success(), "{}", err(&anywhere));
-    let primary = fx.hook(&work, &["pre-commit", "--worktrees"], "", &[]);
-    assert!(!primary.status.success());
-    assert!(
-        err(&primary).contains("primary checkout"),
-        "{}",
-        err(&primary)
-    );
-    let merge = fx.hook(&work, &["pre-merge-commit", "--worktrees"], "", &[]);
-    assert!(!merge.status.success());
-    let unasked = fx.hook(&work, &["pre-merge-commit"], "", &[]);
-    assert_eq!(
-        unasked.status.code(),
-        Some(2),
-        "the stage is only the worktree rule: {}",
-        err(&unasked)
-    );
-}
-
-#[test]
-fn the_worktree_rule_passes_a_branch_and_a_merge_on_main_but_no_plain_commit_there() {
-    let fx = Fixture::new("worktree-main");
-    let work = fx.work();
-    let branch = fx.root.join("wt-branch");
-    fx.git(
-        &work,
-        &[
-            "worktree",
-            "add",
-            "-q",
-            "-b",
-            "a/b",
-            branch.to_str().unwrap(),
-        ],
-    );
-    let ok = fx.hook(&branch, &["pre-commit", "--worktrees"], "", &[]);
-    assert!(ok.status.success(), "{}", err(&ok));
-
-    // A worktree on main: a merge there is the remedy and passes; a plain commit does not.
-    fx.git(&work, &["switch", "-q", "-c", "elsewhere"]);
-    let on_main = fx.root.join("wt-main");
-    fx.git(
-        &work,
-        &["worktree", "add", "-q", on_main.to_str().unwrap(), "main"],
-    );
-    let commit = fx.hook(&on_main, &["pre-commit", "--worktrees"], "", &[]);
-    assert!(!commit.status.success());
-    assert!(
-        err(&commit).contains("no direct commits on main"),
-        "{}",
-        err(&commit)
-    );
-    let merge = fx.hook(&on_main, &["pre-merge-commit", "--worktrees"], "", &[]);
-    assert!(merge.status.success(), "{}", err(&merge));
 }
 
 #[test]

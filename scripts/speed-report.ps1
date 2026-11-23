@@ -19,7 +19,7 @@
 
     It knows nothing of any one product and depends only on cargo, so it runs against any Cargo
     checkout. Verified on 2026-11-22 against Susi on Windows (PowerShell 7) and on 2026-11-23
-    against Susi Tools on Linux (CachyOS, PowerShell 7); not yet run against Susi Core.
+    against Susi Tools on Linux (CachyOS, PowerShell 7).
 
     Exit code: 0 when every timed operation is within the line, 1 when any is over or failed,
     2 when the checkout cannot be used.

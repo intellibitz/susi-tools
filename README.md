@@ -4,26 +4,21 @@ Susi Tools: the development tooling of the Susi AI OS ecosystem. Apache-2.0.
 
 Susi is the AI OS product: the private, licensed commercial apps (repository
 `susi`; agents' clones of it still sit in folders named `susi-commercial-apps`).
-It is the primary. Two public derivatives come from it, both Apache-2.0, and the
-three move together:
+It is the primary. Susi Tools (this repository, `susi-tools`, public,
+Apache-2.0) holds everything used only while developing, testing and releasing
+Susi; nothing here ships inside a production program. Susi Core, the public
+library repository, was retired on 2026-11-23.
 
-- **Susi Core** (repository `susi-core`, public): the small libraries Susi
-  builds on.
-- **Susi Tools** (this repository, `susi-tools`): everything used only while
-  developing, testing and releasing Susi. Nothing here ships inside a
-  production program.
-
-How the three repositories fit together, and what is finished and what is
-not: [`ECOSYSTEM.md`](ECOSYSTEM.md). The page lives here, and Susi and Susi Core
-point to it. Work here follows Susi's contract (its `AGENTS.md`: the loop, the
+How the repositories fit together, and what is finished and what is not:
+[`ECOSYSTEM.md`](ECOSYSTEM.md). The page lives here, and Susi points to it. Work here follows Susi's contract (its `AGENTS.md`: the loop, the
 Board, tasks and claims); the rules below are this repository's own.
 
 ## Rules of this repository
 
 - **Apache-2.0, and nothing secret.** No credentials, keys, licence material or
   private records, in any file or in the history.
-- **It stands alone.** It depends on neither the private product nor Susi Core
-  (decided 2026-11-22), so anyone can build and use it.
+- **It stands alone.** It depends on nothing of the private product (decided
+  2026-11-22), so anyone can build and use it.
 - **Development code and production code stay apart.** A production program
   never contains development tooling; the tooling lives here.
 - **No dependency on a hosting service.** Git is the only transport. Hosted
@@ -62,15 +57,14 @@ Board, tasks and claims); the rules below are this repository's own.
     work only, a fast-forward of `main`, then Landed on the Board; renews your
     claim, or releases it when the ship closed its task). A task of Susi's
     queue (which holds the ecosystem's tasks and the Board) can claim files
-    here or in Susi Core: the claim is kept on the repository whose files it
-    covers, and a ship there renews it while the task is open in Susi.
+    here: the claim is kept on the repository whose files it covers, and a ship there renews it while the task is open in Susi.
   - **Backups:** a clone that names backups (`git config --add susi.backup
     <url>`, once per backup) has each ship start a detached push to every one
     of them, never forced and never claims; the ship does not wait for it, and
     each outcome is a line of `.git/susi-backup.log`. A private repository's
     backups carry `main`, release tags, agents' published work, the Board and
     the finished task records. A public repository's (its `.susi-repo-role`
-    says `public-…`: Susi Core, Susi Tools) carry `main` only: a signed
+    says `public-…`: Susi Tools) carry `main` only: a signed
     release tag is published by hand, so the public copies never receive an
     unsigned one.
   - **The public firewall:** a public repository is pushed only through the
@@ -78,7 +72,7 @@ Board, tasks and claims); the rules below are this repository's own.
     pre-push hook runs the script on every push, as a server's pre-receive
     would, and refuses the push when none is named. This public program never
     spells out the private product's markers.
-  - **The Git hooks of Susi, Susi Core and Susi Tools** (`src/githook.rs`):
+  - **The Git hooks of Susi and Susi Tools** (`src/githook.rs`):
     each repository's `.githooks/<stage>` is one line that runs `susi-tools
     hook <stage>`, so the rules are written once, here. `pre-commit` checks the
     agent's own root and a fresh checkout, then the staged change (no new blob
@@ -92,8 +86,7 @@ Board, tasks and claims); the rules below are this repository's own.
     firewall for a public repository; `post-checkout` lists finished worktrees
     after `git worktree add`. The staged files are the ones being committed:
     under `git commit -a` or `git commit <path>`, those of the index Git names
-    for the hook. A repository's hook adds what it needs: `--worktrees` (no
-    commit in a primary checkout or straight on `main`), `--isolation` (the
+    for the hook. A repository's hook adds what it needs: `--isolation` (the
     agent's own `SUSI_HOME`, build target and scratch, outside every checkout)
     and `--token-prefix <prefix>` (its own licence tokens count as secrets).
     Each refusal says why its rule exists and how to proceed. Susi Tools
@@ -105,8 +98,7 @@ Board, tasks and claims); the rules below are this repository's own.
     earlier development program installed beside this one as
     `susi-tools-legacy`: any command this one does not have (among them
     `workflow vision`, `workflow prune` and `workflow start`) is handed to it,
-    with a one-line note, and `SUSI_TOOLS_ACCEPT_VIA` names the wrapper that
-    runs Susi Core's acceptance there. Board items, task records, claims and
+    with a one-line note. Board items, task records, claims and
     agent-root markers have the earlier program's formats, so both read each
     other's work. The Linux hosts have no earlier program: there, such a
     command is unknown. The hand-off ends when no agent on the Windows host

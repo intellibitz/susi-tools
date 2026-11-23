@@ -46,9 +46,9 @@ Harvested code: the second program, local-harvest audit [--range <A..B>] | notic
 The session start
   susi-tools workflow check      fast-forward a clean checkout, show what is addressed to you,
                                  say what you hold
-The Git hooks of Susi and Susi Core: each .githooks/<stage> is one line that runs
-  susi-tools hook pre-commit | commit-msg <file> | pre-merge-commit --worktrees
-                  | pre-push <remote> [url] | post-checkout <old> <new> <flag>
+The Git hooks of Susi and Susi Tools: each .githooks/<stage> is one line that runs
+  susi-tools hook pre-commit | commit-msg <file> | pre-push <remote> [url]
+                  | post-checkout <old> <new> <flag>
                   (susi-tools hook --help for the options)
 Your agent root, which holds your clones, worktrees, build targets and scratch (the hooks
 refuse a commit inside another agent's root)
@@ -426,7 +426,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 .try_read(&["symbolic-ref", "--short", "-q", "HEAD"])
                 .map(|b| b.trim().to_owned())
                 .unwrap_or_default();
-            // A task of Susi's queue may claim files here (Susi Tools, Susi Core).
+            // A task of Susi's queue may claim files here (Susi Tools).
             let queue = o.board(&repo).ok();
             let claim = claims::claim(
                 &repo,
@@ -633,7 +633,7 @@ fn after_ship(
         mine.task
     );
     // The task is open while its record is on main here, or, for a task of Susi's queue claimed
-    // in Susi Tools or Susi Core, on Susi's main.
+    // in Susi Tools, on Susi's main.
     let open_here = repo.try_read(&["cat-file", "-e", &record]).is_some();
     let open_in_queue = !open_here
         && board.git_dir() != repo.git_dir()

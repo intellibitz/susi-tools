@@ -164,7 +164,7 @@ pub struct Request<'a> {
     /// Where the task's record is, when it is not in this repository's own queue: Susi's
     /// repository, which holds the ecosystem's queue and the Board. The claim itself is always
     /// kept on this repository's `remote`, where the files it covers live, so a task of Susi's
-    /// queue can claim files in Susi Tools or Susi Core.
+    /// queue can claim files in Susi Tools.
     pub queue: Option<&'a Repo>,
 }
 

@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `susi-tools hook <stage>`: what the Git hooks of Susi and Susi Core run. Each repository's
+//! `susi-tools hook <stage>`: what the Git hooks of Susi and Susi Tools run. Each repository's
 //! `.githooks/<stage>` is one line that calls this, so the rules live in one place, written
 //! once and tested here. What a repository asks for beyond the common rules, its hook says:
 //!
 //! - `--token-prefix <prefix>` (repeatable): the product's own licence tokens, `<prefix>.` or
 //!   `<prefix>:` and 40 or more token characters, are refused like any other secret. The prefix
 //!   comes from the repository, so this program names no product's tokens.
-//! - `--worktrees`: commits and merges only in a linked worktree, and no plain commit on
-//!   `main`: each agent works on its own branch, and only `ship` moves `main`.
 //! - `--isolation`: the agent's own `SUSI_HOME`, build target and scratch folders, outside every
 //!   checkout, so no two running instances share state, for the repository whose programs read
 //!   `SUSI_HOME`.
@@ -20,7 +18,6 @@
 //! - `commit-msg <file>`: a subject that says what; a `Task:` trailer naming a task recorded or
 //!   claimed here; for a claimed task, the claim is yours and covers every staged file; a sized
 //!   task states where its agent looked (the reuse rule, `hooks.rs`).
-//! - `pre-merge-commit --worktrees`: the worktree rule for a merge (Susi Core's hook).
 //! - `pre-push <remote> [url]`: refs and records on standard input, as Git gives them. Only
 //!   `main` is a branch, and it only moves forward; agents publish to `refs/agents/<name>`
 //!   (fast-forwards, or deleted); `vX.Y.Z` tags are created once; the task queue's records are
@@ -51,9 +48,8 @@ const QUEUE_NAMESPACES: [&str; 5] = [
 ];
 
 const USAGE: &str = "\
-  susi-tools hook pre-commit [--worktrees] [--isolation] [--token-prefix <prefix>]...
+  susi-tools hook pre-commit [--isolation] [--token-prefix <prefix>]...
   susi-tools hook commit-msg <message-file>
-  susi-tools hook pre-merge-commit --worktrees
   susi-tools hook pre-push <remote> [url]   (records on standard input)
   susi-tools hook post-checkout <old> <new> <flag>
 Each repository's .githooks/<stage> is one line that runs the stage with the options it needs.";
@@ -61,7 +57,6 @@ Each repository's .githooks/<stage> is one line that runs the stage with the opt
 /// What a repository's hook asks for beyond the common rules.
 #[derive(Default)]
 struct Policy {
-    worktrees: bool,
     isolation: bool,
     token_prefixes: Vec<String>,
 }
@@ -77,7 +72,6 @@ pub fn run_cli(args: &[&str]) -> Result<(), Stop> {
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match *arg {
-            "--worktrees" => policy.worktrees = true,
             "--isolation" => policy.isolation = true,
             "--token-prefix" => policy.token_prefixes.push(
                 it.next()
@@ -99,10 +93,6 @@ pub fn run_cli(args: &[&str]) -> Result<(), Stop> {
                 .map_err(|e| Stop::Usage(format!("cannot read {file}: {e}")))?;
             commit_msg(&repo, &message)
         }
-        ["pre-merge-commit"] if policy.worktrees => hooks::guard(&repo, false, "origin", None),
-        ["pre-merge-commit"] => Err(Stop::Usage(
-            "pre-merge-commit applies only the worktree rule: give --worktrees".into(),
-        )),
         ["pre-push", _remote, ..] => {
             let mut input = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)
@@ -152,14 +142,9 @@ impl Refusals {
 
 fn pre_commit(repo: &Repo, policy: &Policy) -> Result<(), Stop> {
     let merging = repo.git_dir().join("MERGE_HEAD").is_file();
-    if policy.worktrees {
-        // A merge's own commit follows the merge rule: a merge on main is the remedy.
-        hooks::guard(repo, !merging, "origin", None)?;
-    } else {
-        hooks::own_root(repo, None)?;
-        if !merging {
-            hooks::fresh(repo, "origin")?;
-        }
+    hooks::own_root(repo, None)?;
+    if !merging {
+        hooks::fresh(repo, "origin")?;
     }
     if merging {
         return Ok(());
@@ -773,7 +758,7 @@ pub fn is_public(repo: &Repo) -> bool {
         .is_some_and(|role| role.starts_with("public-"))
 }
 
-/// A public repository (Susi Core, Susi Tools) is pushed only through its firewall, which keeps
+/// A public repository (Susi Tools) is pushed only through its firewall, which keeps
 /// the private product out of it: the script Susi keeps, named by `git config
 /// susi.publicFirewall`, given the refs being pushed as a server's pre-receive reads them (`old
 /// new ref`), and run in this repository. This public program does not spell out what the

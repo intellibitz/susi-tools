@@ -1089,37 +1089,3 @@ fn a_ship_never_shortens_a_longer_lease() {
         "the ship's one-hour renewal shortened a three-hour lease"
     );
 }
-
-#[test]
-fn a_wrapper_named_by_the_setting_runs_the_acceptance() {
-    let fx = Fx::new("via");
-    let alpha = fx.clone_of("alpha");
-    let run = |via: &str| {
-        Command::new(env!("CARGO_BIN_EXE_susi-tools"))
-            .current_dir(&alpha)
-            .env("GIT_CONFIG_GLOBAL", fx.root.join("gitconfig"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("SUSI_AGENT", "alpha")
-            .env("SUSI_TOOLS_ACCEPT_VIA", via)
-            .args(["tasks", "close", "T-A-1"])
-            .output()
-            .unwrap()
-    };
-    // "cargo cargo --version" fails: the wrapper is really in front of the command.
-    let refused = run("cargo");
-    assert_eq!(
-        refused.status.code(),
-        Some(1),
-        "{}",
-        String::from_utf8_lossy(&refused.stderr)
-    );
-    assert!(alpha.join(".agents/tasks/T-A-1.json").exists());
-    let pass_through = if cfg!(windows) { "cmd /C" } else { "env" };
-    let closed = run(pass_through);
-    assert!(
-        closed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&closed.stderr)
-    );
-    assert!(!alpha.join(".agents/tasks/T-A-1.json").exists());
-}

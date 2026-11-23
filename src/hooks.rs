@@ -18,7 +18,7 @@
 //!   for a commit the root and freshness checks above.
 //!
 //! Escape hatches, deliberate and visible, never the default: `SUSI_ALLOW_FOREIGN_ROOT`,
-//! `SUSI_ALLOW_STALE`, `SUSI_ALLOW_NO_REUSE`, `SUSI_ALLOW_PRIMARY`, `SUSI_ALLOW_MAIN` (set and
+//! `SUSI_ALLOW_STALE`, `SUSI_ALLOW_NO_REUSE` (set and
 //! not `0`).
 
 use crate::git::Repo;
@@ -308,35 +308,6 @@ pub fn own_root(repo: &Repo, agent: Option<&str>) -> Result<(), Stop> {
         Some(why) => Err(Stop::Refused(why)),
         None => Ok(()),
     }
-}
-
-/// Whether `repo` is a primary checkout: its git directory is the common one, so it is not a
-/// linked worktree.
-fn primary(repo: &Repo) -> Result<bool, String> {
-    let common = repo.read(&["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
-    let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    Ok(canon(Path::new(common.trim())) == canon(repo.git_dir()))
-}
-
-/// The worktree rule for a commit or a merge, then the root check, and for a commit the
-/// freshness check.
-pub fn guard(repo: &Repo, commit: bool, remote: &str, agent: Option<&str>) -> Result<(), Stop> {
-    if !allowed("SUSI_ALLOW_PRIMARY") && primary(repo)? {
-        return Err(Stop::Refused(
-            "❌ do not commit in the primary checkout: it is a launch folder, and agents never share a checkout.\n   Work in your own linked worktree on your own branch: git worktree add <your root>/wt/<name> -b <you>/<name> origin/main".into(),
-        ));
-    }
-    own_root(repo, agent)?;
-    if commit {
-        let branch = repo.try_read(&["symbolic-ref", "-q", "--short", "HEAD"]);
-        if !allowed("SUSI_ALLOW_MAIN") && branch.as_deref().map(str::trim) == Some("main") {
-            return Err(Stop::Refused(
-                "❌ no direct commits on main: it moves only by `susi-tools ship`, a tested fast-forward. Commit on your branch; ship lands it.".into(),
-            ));
-        }
-        fresh(repo, remote)?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]
