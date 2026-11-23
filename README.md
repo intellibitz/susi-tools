@@ -85,7 +85,8 @@ Board, tasks and claims); the rules below are this repository's own.
     (`<target>/no-default-features`, so the two builds never overwrite each
     other's binaries); and the lints (`cargo fmt --check`, Clippy for both
     builds, and Clippy for every `--target` for both builds, with
-    `SUSI_CROSS_CHECK=1`). It names each gate's time and the failing one's
+    `SUSI_CROSS_CHECK=1`; without default features only for the packages that
+    have features, since nothing else changes). It names each gate's time and the failing one's
     output, and says plainly when the whole run is over the 10-second line
     (the CEO, 2026-11-24: "a non negotiable mandate would be 10s"). On Susi:
     6.7 s, against 14.3 s one after another.

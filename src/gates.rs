@@ -12,7 +12,8 @@
 //!   did, and a test then ran the wrong program);
 //! - the lints: `cargo fmt --check`, Clippy for both builds, and Clippy for every `--target` named,
 //!   for both builds, with `SUSI_CROSS_CHECK=1` (Susi's switch for its Windows runtime's
-//!   native-only build script).
+//!   native-only build script); without default features, only for the packages that have
+//!   features, as their tests (after an edit to a deep crate, Susi's gates took 9.3 s; so, 8.4).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -125,6 +126,33 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
             .collect()
     };
     let deny = ["--", "-D", "warnings"];
+    // Without default features only the packages that have features change, so their Clippy is
+    // all that differs from the first build's: `-p` each, as their tests are (`--workspace` when
+    // they could not be named).
+    let customer_clippy = |extra: &[&str]| -> Vec<String> {
+        let mut args = vec!["clippy".to_owned()];
+        match &featured {
+            Some(packages) if !packages.is_empty() => {
+                for package in packages {
+                    args.extend(["-p".to_owned(), package.clone()]);
+                }
+            }
+            _ => args.push("--workspace".to_owned()),
+        }
+        args.extend(
+            [
+                "--all-targets",
+                "--offline",
+                "--locked",
+                "--no-default-features",
+            ]
+            .iter()
+            .chain(extra)
+            .chain(&deny)
+            .map(|a| (*a).to_owned()),
+        );
+        args
+    };
     let cross: Vec<String> = targets
         .iter()
         .flat_map(|t| ["--target".to_owned(), t.clone()])
@@ -168,7 +196,7 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
         });
         lints.push(Step {
             name: "clippy, no default features",
-            args: with(&["--no-default-features"], &deny),
+            args: customer_clippy(&[]),
             target: Some(customer.clone()),
             cross: false,
         });
@@ -181,11 +209,9 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
             cross: true,
         });
         if featured.is_some() {
-            let mut extra = vec!["--no-default-features"];
-            extra.extend(&cross_refs);
             lints.push(Step {
                 name: "clippy, every product target, no default features",
-                args: with(&extra, &deny),
+                args: customer_clippy(&cross_refs),
                 target: Some(customer.clone()),
                 cross: true,
             });
