@@ -5,15 +5,17 @@
 //!
 //! - The agent's own root: every agent works under its own root, a folder marked by a
 //!   `.susi-agent-root` file naming its agent. A commit inside another agent's root is refused,
-//!   and so is a marker that cannot be read; a folder in no root passes (Mandate 77).
+//!   and so is a marker that cannot be read; a folder in no root passes. Agents never work in
+//!   each other's roots, so no agent's clones, builds or scratch are touched by another.
 //!   `workflow root init --agent <name> [dir]` marks a root (default `~/susi-agents/<name>`).
 //! - Freshness: a commit on a checkout more than `susi.maxBehind` (default 20) commits behind
-//!   the remote's `main` is refused, when the remote answered (Mandate 74).
+//!   the remote's `main` is refused, when the remote answered: work built on a stale `main`
+//!   tests what is no longer there and merges late.
 //! - Reuse: a commit for a task of size `m` or `l` whose record states no reuse decision is
-//!   refused (Mandate 78).
+//!   refused: look before you build, so nothing is written twice.
 //! - The worktree guard: no commit or merge in a primary checkout (one that is not a linked
-//!   worktree), no plain commit on `main` (Mandate 49), and for a commit the root and freshness
-//!   checks above.
+//!   worktree), no plain commit on `main` (it moves only by `ship`, a tested fast-forward), and
+//!   for a commit the root and freshness checks above.
 //!
 //! Escape hatches, deliberate and visible, never the default: `SUSI_ALLOW_FOREIGN_ROOT`,
 //! `SUSI_ALLOW_STALE`, `SUSI_ALLOW_NO_REUSE`, `SUSI_ALLOW_PRIMARY`, `SUSI_ALLOW_MAIN` (set and
@@ -148,7 +150,7 @@ pub fn root_refusal(foreign: Option<&(Root, String)>) -> Option<String> {
         return None;
     }
     Some(format!(
-        "❌ Mandate 77: {} is the root of agent `{}`; you are `{asking}`.\n   Work only under your own root (susi-tools workflow root init --agent {asking}); ask `{}` on the Board for anything you need from it.",
+        "❌ {} is the root of agent `{}`; you are `{asking}`. Agents never work in each other's roots.\n   Work only under your own root (susi-tools workflow root init --agent {asking}); ask `{}` on the Board for anything you need from it.",
         root.dir.display(),
         root.agent,
         root.agent
@@ -213,7 +215,7 @@ pub fn fresh(repo: &Repo, remote: &str) -> Result<(), Stop> {
         .unwrap_or(0);
     if behind > limit {
         return Err(Stop::Refused(format!(
-            "❌ Mandate 74: this checkout is {behind} commits behind {remote}'s main (a commit is refused beyond {limit}).\n   Catch up first: git merge {snapshot}   (or, on a clean checkout: susi-tools workflow check)"
+            "❌ this checkout is {behind} commits behind {remote}'s main (a commit is refused beyond {limit}): work built on a stale main tests what is no longer there.\n   Catch up first: git merge {snapshot}   (or, on a clean checkout: susi-tools workflow check)"
         )));
     }
     Ok(())
@@ -289,7 +291,7 @@ pub fn reuse(work: &Path, tasks: &[String]) -> Result<(), Stop> {
             json::parse(&text).map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
         if let Some(gap) = reuse_gap(&record) {
             return Err(Stop::Refused(format!(
-                "❌ Mandate 78: {id} is a task of size {} and {gap}.\n   Look before you build: record in its `reuse` object where you looked (`searched`) and what you decided (`decision`: existing, harvest, dependency or build; a `source` for a harvest, a `reason` for a build), commit the record, then commit again.",
+                "❌ {id} is a task of size {} and {gap}.\n   Look before you build, so nothing is written twice: record in its `reuse` object where you looked (`searched`) and what you decided (`decision`: existing, harvest, dependency or build; a `source` for a harvest, a `reason` for a build), commit the record, then commit again.",
                 record.text("size")
             )));
         }
@@ -297,13 +299,12 @@ pub fn reuse(work: &Path, tasks: &[String]) -> Result<(), Stop> {
     Ok(())
 }
 
-/// Mandate 77: refuse a checkout inside another agent's root, or under a marker that cannot be
-/// read.
+/// Refuse a checkout inside another agent's root, or under a marker that cannot be read.
 pub fn own_root(repo: &Repo, agent: Option<&str>) -> Result<(), Stop> {
     let work = repo.work_tree()?;
     let asking = crate::agent::name(agent, repo).ok();
     let foreign = foreign_root(work, asking.as_deref())
-        .map_err(|why| Stop::Refused(format!("❌ Mandate 77: {why}")))?;
+        .map_err(|why| Stop::Refused(format!("❌ {why}: the marker says whose root this is")))?;
     match root_refusal(foreign.as_ref()) {
         Some(why) => Err(Stop::Refused(why)),
         None => Ok(()),
@@ -318,12 +319,12 @@ fn primary(repo: &Repo) -> Result<bool, String> {
     Ok(canon(Path::new(common.trim())) == canon(repo.git_dir()))
 }
 
-/// Mandate 49 for a commit or a merge, then the root check, and for a commit the freshness
-/// check.
+/// The worktree rule for a commit or a merge, then the root check, and for a commit the
+/// freshness check.
 pub fn guard(repo: &Repo, commit: bool, remote: &str, agent: Option<&str>) -> Result<(), Stop> {
     if !allowed("SUSI_ALLOW_PRIMARY") && primary(repo)? {
         return Err(Stop::Refused(
-            "❌ Mandate 49: do not commit in the primary checkout.\n   Work in your own linked worktree on your own branch: git worktree add <your root>/wt/<name> -b <you>/<name> origin/main".into(),
+            "❌ do not commit in the primary checkout: it is a launch folder, and agents never share a checkout.\n   Work in your own linked worktree on your own branch: git worktree add <your root>/wt/<name> -b <you>/<name> origin/main".into(),
         ));
     }
     own_root(repo, agent)?;
@@ -331,7 +332,7 @@ pub fn guard(repo: &Repo, commit: bool, remote: &str, agent: Option<&str>) -> Re
         let branch = repo.try_read(&["symbolic-ref", "-q", "--short", "HEAD"]);
         if !allowed("SUSI_ALLOW_MAIN") && branch.as_deref().map(str::trim) == Some("main") {
             return Err(Stop::Refused(
-                "❌ Mandate 49: no direct commits on main. Commit on your branch; `susi-tools ship` lands it on main.".into(),
+                "❌ no direct commits on main: it moves only by `susi-tools ship`, a tested fast-forward. Commit on your branch; ship lands it.".into(),
             ));
         }
         fresh(repo, remote)?;

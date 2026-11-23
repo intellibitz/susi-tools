@@ -616,7 +616,7 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// Landing work keeps a claim alive; a claim on a task this ship closed is released (Mandate 85).
+/// Landing work keeps a claim alive; a claim on a task this ship closed is released.
 fn after_ship(
     repo: &git::Repo,
     remote: &str,

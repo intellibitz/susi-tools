@@ -776,7 +776,7 @@ fn parse_manifest(name: &str, v: &Json) -> std::result::Result<Manifest, Vec<Str
     let license = str_field(v, "license", &ctx, e);
     if license != "Apache-2.0" {
         e.push(format!(
-            "{ctx}: license `{license}` is not Apache-2.0; Pure Apache-2.0 Compliance (Mandate 75) requires `\"Apache-2.0\"`"
+            "{ctx}: license `{license}` is not Apache-2.0; harvested code is pure Apache-2.0 and requires `\"Apache-2.0\"`"
         ));
     }
     let notice_text = str_field(v, "notice_text", &ctx, e);
@@ -848,7 +848,7 @@ fn parse_manifest(name: &str, v: &Json) -> std::result::Result<Manifest, Vec<Str
             let spdx = str_field(f, "spdx", &ctx, e);
             if spdx != "Apache-2.0" {
                 e.push(format!(
-                    "{ctx}: `{source_path}` license `{spdx}` is not Apache-2.0; Pure Apache-2.0 Compliance (Mandate 75) requires `\"Apache-2.0\"`"
+                    "{ctx}: `{source_path}` license `{spdx}` is not Apache-2.0; harvested code is pure Apache-2.0 and requires `\"Apache-2.0\"`"
                 ));
             }
             ManifestFile {

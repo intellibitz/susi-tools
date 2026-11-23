@@ -413,7 +413,11 @@ fn the_root_rule_refuses_only_another_agents_root_or_a_damaged_marker() {
     assert!(own.status.success(), "{}", err(&own));
     let foreign = fx.hook(&clone, &["pre-commit"], "", &[("SUSI_AGENT", "beta")]);
     assert!(!foreign.status.success());
-    assert!(err(&foreign).contains("Mandate 77"), "{}", err(&foreign));
+    assert!(
+        err(&foreign).contains("is the root of agent `alpha`; you are `beta`"),
+        "{}",
+        err(&foreign)
+    );
     let nobody = fx.hook(&clone, &["pre-commit"], "", &[]);
     assert!(nobody.status.success(), "{}", err(&nobody));
     let outside = fx.hook(&fx.work(), &["pre-commit"], "", &[("SUSI_AGENT", "beta")]);
@@ -483,7 +487,11 @@ fn commit_msg_refuses_a_sized_task_that_states_no_reuse_decision() {
     let msg = fx.message("feat: a thing\n\nTask: T-A-1\n");
     let owed = fx.hook(&work, &["commit-msg", &msg], "", &[]);
     assert!(!owed.status.success());
-    assert!(err(&owed).contains("Mandate 78"), "{}", err(&owed));
+    assert!(
+        err(&owed).contains("T-A-1 is a task of size m and it states no reuse decision"),
+        "{}",
+        err(&owed)
+    );
 
     record(r#","reuse":{"decision":"build","searched":"here","reason":"nothing fit"}"#);
     let stated = fx.hook(&work, &["commit-msg", &msg], "", &[]);
@@ -519,12 +527,12 @@ fn commit_msg_wants_a_task_recorded_or_claimed_here_and_keeps_to_the_claim() {
 
     let none = run("feat: a\n", &[]);
     assert!(!none.status.success());
-    assert!(err(&none).contains("Mandate 50"), "{}", err(&none));
+    assert!(err(&none).contains("names no task"), "{}", err(&none));
     let wip = run("wip\n", &[]);
     assert!(!wip.status.success());
     let local = run("feat: a\n\nTask: LOCAL-core-work\n", &[]);
     assert!(!local.status.success(), "a LOCAL- trailer names no task");
-    assert!(err(&local).contains("Mandate 50"), "{}", err(&local));
+    assert!(err(&local).contains("names no task"), "{}", err(&local));
     let unknown = run("feat: a\n\nTask: T-A-1\n", &[]);
     assert!(!unknown.status.success());
     assert!(

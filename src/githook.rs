@@ -8,9 +8,10 @@
 //!   `<prefix>:` and 40 or more token characters, are refused like any other secret. The prefix
 //!   comes from the repository, so this program names no product's tokens.
 //! - `--worktrees`: commits and merges only in a linked worktree, and no plain commit on
-//!   `main` (Mandate 49).
+//!   `main`: each agent works on its own branch, and only `ship` moves `main`.
 //! - `--isolation`: the agent's own `SUSI_HOME`, build target and scratch folders, outside every
-//!   checkout (Mandate 97), for the repository whose programs read `SUSI_HOME`.
+//!   checkout, so no two running instances share state, for the repository whose programs read
+//!   `SUSI_HOME`.
 //!
 //! The stages:
 //!
@@ -26,7 +27,7 @@
 //!   (fast-forwards, or deleted); `vX.Y.Z` tags are created once; the task queue's records are
 //!   blobs; Board items are created once, as blobs. Anything else is refused.
 //! - `post-checkout <old> <new> <flag>`: after `git worktree add`, lists the finished worktrees
-//!   to remove first (Mandate 98). Advice only.
+//!   to remove first. Advice only.
 //!
 //! The public repositories' boundary (nothing of the private product enters them) is not
 //! checked here: each public repository's canonical server refuses it at push, with the same
@@ -176,12 +177,12 @@ fn pre_commit(repo: &Repo, policy: &Policy) -> Result<(), Stop> {
         if file.size >= MAX_BLOB_BYTES {
             if file.status == 'A' {
                 refusals.add(format!(
-                    "Mandate 94: {} is {} bytes; blobs of 1 MiB or more stay out of source.",
+                    "{} is {} bytes; a blob of 1 MiB or more stays out of source, where every clone would carry it for good.",
                     file.path, file.size
                 ));
             } else {
                 warn(&format!(
-                    "Mandate 94: {} is {} bytes; move it out of source or shrink it (advice).",
+                    "{} is {} bytes; move it out of source or shrink it (advice).",
                     file.path, file.size
                 ));
             }
@@ -295,7 +296,10 @@ fn check_added_lines(
         ));
     }
     if !debug.is_empty() {
-        refusals.add(format!("Mandate 93: remove dbg! from: {}", debug.join(" ")));
+        refusals.add(format!(
+            "remove dbg! from: {} (debug output never ships)",
+            debug.join(" ")
+        ));
     }
 }
 
@@ -419,7 +423,7 @@ fn edition_of(work: &Path, path: &str) -> String {
     "2021".into()
 }
 
-// --- isolation (Mandate 97) ---------------------------------------------------------------
+// --- isolation -----------------------------------------------------------------------------
 
 /// Refuse when this instance would build, test or run a Susi program in state another instance
 /// shares: `SUSI_HOME` unset, relative, a shared default or inside a checkout, or claimed by
@@ -437,7 +441,7 @@ fn isolation(repo: &Repo) -> Result<(), Stop> {
         .collect::<Vec<_>>();
     let refuse = |why: String, how: &str| {
         Err(Stop::Refused(format!(
-            "❌ Mandate 97: {why}\n   {how}\n   (a human who deliberately wants a shared environment sets SUSI_ALLOW_SHARED_HOME=1)"
+            "❌ {why}\n   {how}\n   Each running instance keeps its own state, so agents never read or overwrite each other's.\n   (a human who deliberately wants a shared environment sets SUSI_ALLOW_SHARED_HOME=1)"
         )))
     };
     let home_var = std::env::var("SUSI_HOME").unwrap_or_default();
@@ -627,19 +631,19 @@ fn commit_msg(repo: &Repo, message: &str) -> Result<(), Stop> {
     }
     if subject.chars().count() > 72 {
         warn(&format!(
-            "Mandate 94: the subject is {} characters; keep it to 72 or fewer (advice).",
+            "the subject is {} characters; keep it to 72 or fewer, so a one-line log shows it whole (advice).",
             subject.chars().count()
         ));
     }
     if subject.ends_with('.') {
-        warn("Mandate 94: the subject ends with a period; drop it (advice).");
+        warn("the subject ends with a period; drop it (advice).");
     }
     if matches!(
         subject.trim().to_lowercase().as_str(),
         "wip" | "update" | "wip:" | "update:"
     ) {
         return Err(Stop::Refused(format!(
-            "❌ Mandate 94: say what the commit does, not \"{subject}\"."
+            "❌ say what the commit does, not \"{subject}\": the log is how the next agent finds it."
         )));
     }
     let tasks: Vec<String> = hooks::tasks_in_message(&message)
@@ -648,7 +652,7 @@ fn commit_msg(repo: &Repo, message: &str) -> Result<(), Stop> {
         .collect();
     if tasks.is_empty() {
         return Err(Stop::Refused(
-            "❌ Mandate 50: this commit names no task. End the message with a trailer:\n     Task: T-<AGENT>-<n>   (a task recorded or claimed here: susi-tools tasks start ...)".into(),
+            "❌ this commit names no task: every change traces to a task its agent claimed. End the message with a trailer:\n     Task: T-<AGENT>-<n>   (a task recorded or claimed here: susi-tools tasks start ...)".into(),
         ));
     }
     let work = repo.work_tree()?;
@@ -663,7 +667,7 @@ fn commit_msg(repo: &Repo, message: &str) -> Result<(), Stop> {
         let claim = claim_here(repo, id);
         if !recorded && claim.is_none() {
             return Err(Stop::Refused(format!(
-                "❌ Mandate 50: {id} is neither an open task in this checkout nor claimed on this repository. Claim it here first (susi-tools tasks claim {id} --scope <path>), or merge origin/main if its record is new."
+                "❌ {id} is neither an open task in this checkout nor claimed on this repository: every change traces to a task its agent claimed. Claim it here first (susi-tools tasks claim {id} --scope <path>), or merge origin/main if its record is new."
             )));
         }
         if let Some(claim) = claim {
@@ -924,7 +928,7 @@ fn push_rule(repo: &Repo, local: &str, remote_ref: &str, remote: &str) -> Result
     Err(format!("unsupported ref namespace: {remote_ref}"))
 }
 
-// --- post-checkout (Mandate 98) -------------------------------------------------------------
+// --- post-checkout -------------------------------------------------------------------------
 
 struct Worktree {
     path: PathBuf,
@@ -988,7 +992,7 @@ fn advise_finished_worktrees(repo: &Repo) {
         return;
     }
     eprintln!(
-        "⚠ Mandate 98: remove finished worktrees before starting a fresh one. These are clean and fully on main (check they are yours first):\n{}\n  Remove one with: git worktree remove <path> && git branch -d <branch>",
+        "⚠ remove finished worktrees before starting a fresh one, so none is mistaken for live work. These are clean and fully on main (check they are yours first):\n{}\n  Remove one with: git worktree remove <path> && git branch -d <branch>",
         finished.join("\n")
     );
 }

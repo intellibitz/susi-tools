@@ -7,7 +7,7 @@ use crate::json::Json;
 
 pub const ITEMS: &str = "refs/board/items/";
 pub const SCHEMA: &str = "susi-board-item-v1";
-/// The kinds agents post (Mandate 76 and the Board's own history).
+/// The kinds of item an agent may post.
 pub const KINDS: [&str; 10] = [
     "claim", "landed", "cut", "heads-up", "request", "answer", "handoff", "decision", "blocked",
     "note",
