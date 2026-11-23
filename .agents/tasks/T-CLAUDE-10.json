@@ -1,0 +1,19 @@
+{
+  "id": "T-CLAUDE-10",
+  "title": "local-harvest audits a shallow clone",
+  "goal": "Every fresh clone of Susi from Cloudflare is shallow (from 17339d28); the harvest audit then refused retired records and corrections it could not re-check, so the lander's gates failed on a docs-only change",
+  "size": "s",
+  "deps": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--test",
+      "harvest"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795466239
+}
