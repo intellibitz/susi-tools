@@ -91,8 +91,9 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     agent's own `SUSI_HOME`, build target and scratch, outside every checkout)
     and `--token-prefix <prefix>` (its own licence tokens count as secrets).
     The public repositories' boundary, that nothing of the private product
-    enters them, is their canonical server's to enforce at push, with the same
-    patterns, so this public program never spells out the product's markers.
+    enters them, is enforced at every push by the firewall Susi keeps (`git
+    config susi.publicFirewall`, below), so this public program never spells
+    out the product's markers.
     The rules run only as these stages: the separate `workflow root show`,
     `fresh`, `reuse` and `guard` checks the hooks called before 2026-11-23 left
     on that day. `workflow root init --agent <name> [dir]` marks an agent's
@@ -175,8 +176,9 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
 Each piece is checked against the rules above before it lands.
 This repository is public since 2026-11-22: its write-only backups are at
 `github.com/intellibitz/susi-tools` and `gitlab.com/intellibitz/susi-tools`,
-`main` and signed release tags only. The repository of record is the local
-canonical Git server; nothing is fetched from the hosted copies, and no
+`main` and release tags only. The repository of record is a private Cloudflare
+Artifacts repository (since 2026-11-23); nothing is fetched from the hosted
+copies, every ship pushes them in the background, and no
 outside pull request, patch or commit is merged. Anyone may fork it under
 Apache-2.0, which grants rights to the code, not to the Susi name or marks.
 

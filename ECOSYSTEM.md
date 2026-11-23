@@ -25,13 +25,16 @@ repository kept a copy.
   in their history.
 - **Built by agents.** The software is written, tested and released by AI
   agents. Each repository's `AGENTS.md` is its contract.
-- **One source of truth.** Each repository lives on a local Git server. GitHub
-  and GitLab hold write-only backup copies, refreshed every ten minutes;
-  nothing is ever fetched from them. The public copies of Susi Core are at
-  `github.com/intellibitz/susi-core` and `gitlab.com/intellibitz/susi-core`,
-  and those of Susi Tools (public since 2026-11-22) at
-  `github.com/intellibitz/susi-tools` and `gitlab.com/intellibitz/susi-tools`.
-  Public copies carry `main` and signed release tags only.
+- **One source of truth, on Cloudflare.** Since 2026-11-23 Cloudflare is the
+  primary cloud and each repository's source of truth is a private Cloudflare
+  Artifacts repository, so agents work from any machine. GitHub and GitLab are
+  storage and branding only: Susi's private backups and the public copies of
+  Susi Core (`github.com/intellibitz/susi-core`,
+  `gitlab.com/intellibitz/susi-core`) and Susi Tools
+  (`github.com/intellibitz/susi-tools`, `gitlab.com/intellibitz/susi-tools`).
+  Every ship pushes them in the background; nothing is fetched from them.
+  Public copies carry `main` and release tags only, and every push of a public
+  repository passes the firewall Susi keeps.
 - **Published one way.** No outside pull request, patch or commit is merged.
   Anyone may fork the public repositories under Apache-2.0, which grants rights
   to the code, not to the Susi name or marks.
@@ -49,10 +52,11 @@ Finished:
   left on 2026-11-22 because no feature of Susi used it; its last release,
   v0.21.72, stays published. With it went Susi Tools' release command, which
   cut Core's releases.
-- Development moved to Linux. The laptop that holds the source of truth boots
-  Windows, CachyOS and openSUSE Tumbleweed; both Linux systems run their own
-  copy of the source of truth and the development program, and move work
-  between them through the shared drive. On Linux an agent's loop is
+- Development moved to Linux, then off the laptop: since 2026-11-23 the
+  repositories live on Cloudflare and no machine has to stay on. The laptop
+  (Windows, CachyOS, openSUSE Tumbleweed) keeps each repository's full
+  history, read-only; the keys and the company vault still come from it and
+  from Google Drive, and move next. On Linux an agent's loop is
   sub-second (session check, task start, commit, ship), Susi's whole suite
   takes 6 to 7 seconds, Susi Core's gates about 3 and Susi Tools' suite under 1.
 
