@@ -1,0 +1,19 @@
+{
+  "id": "T-CLAUDE-7",
+  "title": "Gates side by side, and speed under its own line",
+  "goal": "CEO 2026-11-24: the 10s line is non-negotiable; the gates before a ship took 14.3 s in sequence and speed itself 17.7 s",
+  "size": "m",
+  "deps": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--test",
+      "speed"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795460564
+}
