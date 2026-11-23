@@ -1,0 +1,19 @@
+{
+  "id": "T-CLAUDE-9",
+  "title": "Cloud agents ship for landing; a company host gates and lands",
+  "goal": "CEO 2026-11-24 'Company host lands it': cloud agents push to refs/agents/<name>, a company host runs the gates inside the 10s line and fast-forwards main",
+  "size": "l",
+  "deps": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--test",
+      "write"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795465106
+}
