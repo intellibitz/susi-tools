@@ -11,8 +11,6 @@ pub const MAIN_SNAPSHOT: &str = "refs/susi-tools/remote/main";
 pub struct OpenTask {
     pub id: String,
     pub record: Json,
-    pub claim: Option<Json>,
-    pub live: bool,
 }
 
 /// Bring the remote's `main` into this program's own ref and return that ref's name. The same
@@ -22,24 +20,7 @@ pub fn fetch_main(repo: &Repo, remote: &str) -> Result<String, String> {
     Ok(MAIN_SNAPSHOT.to_owned())
 }
 
-pub fn open(repo: &Repo, at: &str, now: i64) -> Result<Vec<OpenTask>, String> {
-    let mut open = open_records(repo, at)?;
-    let claims = claims(repo)?;
-    for task in &mut open {
-        task.claim = claims
-            .iter()
-            .find(|(id, _)| *id == task.id)
-            .map(|(_, c)| c.clone());
-        task.live = task
-            .claim
-            .as_ref()
-            .and_then(|c| c.get("lease_until_unix").and_then(Json::as_i64))
-            .is_some_and(|until| until > now);
-    }
-    Ok(open)
-}
-
-/// The open task records at `at`, without their claims.
+/// The open task records at `at`; their claims are `claims::State`'s.
 pub fn open_records(repo: &Repo, at: &str) -> Result<Vec<OpenTask>, String> {
     let listing = repo.read(&["ls-tree", "-z", at, "--", TASKS_DIR])?;
     let mut ids = Vec::new();
@@ -70,37 +51,10 @@ pub fn open_records(repo: &Repo, at: &str) -> Result<Vec<OpenTask>, String> {
             String::from_utf8(blob).map_err(|_| format!("task {id}: record is not UTF-8"))?;
         let record =
             json::parse(&text).map_err(|e| format!("task {id}: record is not JSON: {e}"))?;
-        open.push(OpenTask {
-            id,
-            record,
-            claim: None,
-            live: false,
-        });
+        open.push(OpenTask { id, record });
     }
     open.sort_by_key(|t| natural_key(&t.id));
     Ok(open)
-}
-
-/// The remote's claims as this program's last fetch (`fetch_main`) brought them.
-fn claims(repo: &Repo) -> Result<Vec<(String, Json)>, String> {
-    let prefix = "refs/susi-tools/remote/claims/";
-    let refs = repo.refs(prefix)?;
-    let oids: Vec<String> = refs.iter().map(|(_, oid)| oid.clone()).collect();
-    let blobs = repo.blobs(&oids)?;
-    let mut out = Vec::new();
-    for ((name, _), blob) in refs.iter().zip(blobs) {
-        let Some(task) = name.strip_prefix(prefix) else {
-            continue;
-        };
-        let Some(blob) = blob else { continue };
-        if let Ok(claim) = String::from_utf8(blob)
-            .map_err(|e| e.to_string())
-            .and_then(|t| json::parse(&t))
-        {
-            out.push((task.to_owned(), claim));
-        }
-    }
-    Ok(out)
 }
 
 /// `T-CLAUDE-9` sorts before `T-CLAUDE-10`.

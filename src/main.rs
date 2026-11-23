@@ -312,13 +312,16 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let repo = o.repo()?;
             // The remote's main and claims as they are now, not the checkout's own main.
             let main = tasks::fetch_main(&repo, REMOTE)?;
-            let open = tasks::open(&repo, &main, time::now_unix())?;
+            let open = tasks::open_records(&repo, &main)?;
+            // The claims came with main's fetch: reading them fetches nothing more.
+            let claims = claims::State::read(&repo, REMOTE)?;
+            let now = time::now_unix();
             println!("{} open task(s) at {REMOTE}'s main", open.len());
             for t in &open {
-                let holder = match (&t.claim, t.live) {
-                    (Some(c), true) => format!("claimed by {}", c.text("agent")),
-                    (Some(c), false) => format!("claim by {} lapsed", c.text("agent")),
-                    (None, _) => "unclaimed".to_owned(),
+                let holder = match claims.on_task(&t.id) {
+                    Some((_, _, c)) if c.live(now) => format!("claimed by {}", c.agent),
+                    Some((_, _, c)) => format!("claim by {} lapsed", c.agent),
+                    None => "unclaimed".to_owned(),
                 };
                 println!(
                     "  {:<22} {:<2} {:<26} {}",
