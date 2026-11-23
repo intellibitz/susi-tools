@@ -55,8 +55,8 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     `main`, then Landed on the Board; renews your claim, or releases it when
     the ship closed its task). `tasks finish` does close and ship in one
     command. The separate `tasks add` and `tasks renew` left on 2026-11-23:
-    nothing called them (`tasks start` adds, a ship renews). The earlier program's
-    spellings `workflow board …` and `workflow ship` work too. A task of
+    nothing called them (`tasks start` adds, a ship renews), and so did the
+    earlier program's spellings `workflow board …` and `workflow ship`. A task of
     Susi's queue (which holds the ecosystem's tasks and the Board) can claim
     files here or in Susi Core: the claim is kept on the repository whose files
     it covers, and a ship there renews it while the task is open in Susi.
@@ -142,7 +142,9 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
   build and the development program's own commands) against the 10-second line
   the CEO set on 2026-11-22: "no more waiting more than 10s for anything - test,
   releases whatever it is". It measures warm only and needs PowerShell 7 and
-  cargo. Verified on Windows against Susi on 2026-11-22; not yet run on Linux.
+  cargo. Verified on Windows against Susi on 2026-11-22, and on Linux against
+  Susi Tools on 2026-11-23 (CachyOS: all nine operations within the line, the
+  longest `cargo test` at 1.0 s).
 - [`scripts/linux-suite.ps1`](scripts/linux-suite.ps1) runs a checkout's whole suite on
   Linux, as it stands, committed or not: from Windows it copies the checkout's files onto a
   WSL2 distribution's own disk (keeping their times, so only what changed is rebuilt), builds

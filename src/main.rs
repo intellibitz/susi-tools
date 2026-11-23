@@ -53,7 +53,6 @@ Your agent root, which holds your clones, worktrees, build targets and scratch (
 refuse a commit inside another agent's root)
   susi-tools workflow root init --agent <name> [dir]   (default ~/susi-agents/<name>)
 
-The earlier program's spellings work too: workflow board list|post|check, workflow ship.
 Any other command goes to the earlier program, installed beside this one as susi-tools-legacy.
 
 Every command also takes:
@@ -246,14 +245,6 @@ fn release_post(repo: &git::Repo, remote: &str, task: &str, agent: &str) -> Resu
 }
 
 fn run(args: &[String]) -> Result<(), Failure> {
-    // The earlier program's spellings still work: `workflow board …`, `workflow ship`.
-    let mut args = args.to_vec();
-    if args.first().map(String::as_str) == Some("workflow")
-        && matches!(args.get(1).map(String::as_str), Some("board" | "ship"))
-    {
-        args.remove(0);
-    }
-    let args = &args[..];
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     let rest = args.get(2..).unwrap_or(&[]);
     match words.as_slice() {

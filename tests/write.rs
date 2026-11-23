@@ -755,7 +755,7 @@ fn ship_refuses_uncommitted_work_and_a_main_that_moved_on() {
 fn the_session_check_fast_forwards_and_shows_what_is_addressed_to_you() {
     let fx = Fx::new("check");
     commit_work(&fx, "beta", "src/b.rs", "T-A-3");
-    fx.ok("beta", &["workflow", "ship"]);
+    fx.ok("beta", &["ship"]);
     fx.ok(
         "alpha",
         &["board", "post", "--kind", "note", "--title", "mine"],
@@ -763,7 +763,6 @@ fn the_session_check_fast_forwards_and_shows_what_is_addressed_to_you() {
     fx.ok(
         "beta",
         &[
-            "workflow",
             "board",
             "post",
             "--kind",
@@ -803,7 +802,7 @@ fn the_session_check_fast_forwards_and_shows_what_is_addressed_to_you() {
             "board", "post", "--kind", "answer", "--title", "done", "--re", "3",
         ],
     );
-    let again = fx.ok("alpha", &["workflow", "board", "check"]);
+    let again = fx.ok("alpha", &["board", "check"]);
     assert!(
         again.contains("nothing is waiting for your answer"),
         "{again}"

@@ -18,8 +18,8 @@
     that is behind the remote's main).
 
     It knows nothing of any one product and depends only on cargo, so it runs against any Cargo
-    checkout. Verified on 2026-11-22 against Susi on Windows (PowerShell 7); not yet run on
-    Linux or against Susi Core, which builds only on Linux.
+    checkout. Verified on 2026-11-22 against Susi on Windows (PowerShell 7) and on 2026-11-23
+    against Susi Tools on Linux (CachyOS, PowerShell 7); not yet run against Susi Core.
 
     Exit code: 0 when every timed operation is within the line, 1 when any is over or failed,
     2 when the checkout cannot be used.
@@ -75,7 +75,7 @@ Measure-Op 'cargo clippy, warm' { cargo clippy --workspace --all-targets --offli
 Measure-Op 'cargo fmt --check' { cargo fmt --all --check }
 if (Get-Command susi-tools -ErrorAction SilentlyContinue) {
     Measure-Op 'susi-tools workflow check' { susi-tools workflow check --agent $Agent }
-    Measure-Op 'susi-tools workflow board check' { susi-tools workflow board check --agent $Agent }
+    Measure-Op 'susi-tools board check' { susi-tools board check --agent $Agent }
     Measure-Op 'susi-tools tasks list' { susi-tools tasks list --json }
 }
 if ($Release) {
