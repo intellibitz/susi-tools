@@ -1,0 +1,18 @@
+{
+  "id": "T-ANTIGRAVITY-1",
+  "title": "Add portable susi-tools speed command and retire speed-report.ps1",
+  "goal": "Add portable Rust command susi-tools speed [--repo <path>] [--cold] [--json], tests against a tiny throwaway workspace, remove scripts/speed-report.ps1, and update README.md and ECOSYSTEM.md.",
+  "size": "m",
+  "deps": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked"
+    ]
+  },
+  "created_by": "ANTIGRAVITY",
+  "created_unix": 1795443197
+}
