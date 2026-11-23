@@ -25,6 +25,12 @@ point to it.
 - **No dependency on a hosting service.** Git is the only transport. Hosted
   copies of this repository are write-only backups; nothing is fetched from
   them and no hosted feature is used.
+- **Every push passes the public firewall.** This repository's
+  `.githooks/pre-push` hands each push to `susi-tools hook pre-push`, which
+  runs the firewall Susi keeps. Once per clone: `git config core.hooksPath
+  .githooks` and `git config susi.publicFirewall <path to Susi's
+  deploy/public-firewall/firewall.sh>`; without the second, every push is
+  refused.
 
 ## Status
 

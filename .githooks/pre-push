@@ -1,0 +1,7 @@
+#!/bin/sh
+# pre-push: only main, refs/agents/<name>, vX.Y.Z tags and the queue's records leave this clone,
+# and, this repository being public, every push passes the public firewall Susi keeps (git config
+# susi.publicFirewall <path>). The rules are Susi Tools' own (`susi-tools hook --help`), and a
+# push is refused when no installed susi-tools has them.
+susi-tools hook --help >/dev/null 2>&1 || { echo "[pre-push] install the current susi-tools from Susi Tools' main: it runs this repository's hooks" >&2; exit 1; }
+exec susi-tools hook pre-push "$@"
