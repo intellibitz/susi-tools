@@ -273,8 +273,8 @@ fn safe_accept(cmd: &[String]) -> Result<(), String> {
     }
 }
 
-/// Write a new task record into the checkout and return its id and path. Committing it is the
-/// agent's next step; nothing else is changed.
+/// Write a new task record into the checkout and return its id and path; `tasks start` commits
+/// it. Nothing else is changed.
 pub fn add(repo: &Repo, new: &NewTask<'_>) -> Result<(String, std::path::PathBuf), String> {
     if new.title.trim().is_empty() || new.title.contains('\n') {
         return Err("a title is one non-empty line".into());

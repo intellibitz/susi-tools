@@ -481,12 +481,17 @@ fn the_queue_and_the_one_claim_rule_refuse_a_claim() {
 }
 
 #[test]
-fn renew_extends_the_lease_and_keeps_when_it_was_claimed() {
+fn claiming_again_extends_the_lease_and_keeps_when_it_was_claimed() {
     let fx = Fx::new("renew");
     fx.ok("alpha", &["tasks", "claim", "T-A-1", "--scope", "src"]);
     let before = fx.origin_blob("refs/claims/T-A-1");
-    let out = fx.ok("alpha", &["tasks", "renew", "--hours", "2"]);
-    assert!(out.contains("ALPHA holds T-A-1 until unix"), "{out}");
+    let out = fx.ok(
+        "alpha",
+        &[
+            "tasks", "claim", "T-A-1", "--scope", "src", "--scope", "docs", "--hours", "2",
+        ],
+    );
+    assert!(out.contains("ALPHA claimed T-A-1 until unix"), "{out}");
     let after = fx.origin_blob("refs/claims/T-A-1");
     let field = |s: &str, k: &str| {
         s.split(&format!("\"{k}\":"))
@@ -503,6 +508,7 @@ fn renew_extends_the_lease_and_keeps_when_it_was_claimed() {
         field(&after, "claimed_unix")
     );
     assert!(field(&after, "lease_until_unix") >= now() + 7000);
+    assert!(after.contains(r#""scopes":["src","docs"]"#), "{after}");
 }
 
 #[test]
@@ -527,7 +533,7 @@ fn release_frees_the_task_for_the_next_agent() {
 }
 
 #[test]
-fn a_new_task_takes_a_number_never_used_before() {
+fn a_started_task_takes_a_number_never_used_before() {
     let fx = Fx::new("add");
     let alpha = fx.clone_of("alpha");
     std::fs::write(
@@ -543,12 +549,14 @@ fn a_new_task_takes_a_number_never_used_before() {
         "alpha",
         &[
             "tasks",
-            "add",
+            "start",
             "Write the thing",
             "--accept",
             "cargo test --test thing",
             "--size",
             "s",
+            "--scope",
+            "src",
         ],
     );
     assert!(out.contains("added T-ALPHA-6"), "{out}");
@@ -562,7 +570,9 @@ fn a_new_task_takes_a_number_never_used_before() {
     assert!(record.contains("\"created_by\": \"ALPHA\""), "{record}");
     fx.refused(
         "alpha",
-        &["tasks", "add", "Bad", "--accept", "rm -rf ."],
+        &[
+            "tasks", "start", "Bad", "--accept", "rm -rf .", "--scope", "docs",
+        ],
         "runs `cargo` or a repository script",
     );
 }
@@ -981,7 +991,7 @@ fn a_task_of_susis_queue_claims_files_in_another_repository_and_keeps_them_acros
 }
 
 #[test]
-fn renewing_never_shortens_a_longer_lease() {
+fn a_ship_never_shortens_a_longer_lease() {
     let fx = Fx::new("longlease");
     fx.ok(
         "alpha",
@@ -998,11 +1008,13 @@ fn renewing_never_shortens_a_longer_lease() {
             .unwrap()
     };
     let long = lease(&fx);
-    fx.ok("alpha", &["tasks", "renew"]);
+    commit_work(&fx, "alpha", "src/lib.rs", "T-A-1");
+    let out = fx.ok("alpha", &["ship"]);
+    assert!(out.contains("landing work renewed the claim"), "{out}");
     assert_eq!(
         lease(&fx),
         long,
-        "a one-hour renewal shortened a three-hour lease"
+        "the ship's one-hour renewal shortened a three-hour lease"
     );
 }
 

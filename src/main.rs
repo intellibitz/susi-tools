@@ -32,9 +32,7 @@ The Board
                         [--to <agent|all>] [--re <n>] [--task <id>]
 Tasks
   susi-tools tasks list [--ref <ref>] [--json]
-  susi-tools tasks add <title> --accept <command> [--goal <text>] [--size xs|s|m|l] [--dep <id>]...
   susi-tools tasks claim <id> --scope <path>... [--hours <1-24>]
-  susi-tools tasks renew [--hours <1-24>]
   susi-tools tasks release <id>
   susi-tools tasks close <id>
   susi-tools tasks start <title> --accept <command> --scope <path>... [--goal <text>] [--size xs|s|m|l]
@@ -63,11 +61,11 @@ Every command also takes:
   --remote <name>  where the Board, claims and main live (default: origin)
   --agent <name>   who you are (default: $SUSI_AGENT, else git config susi.agent)
 
-What each writes: board post creates one numbered item; claim, renew and release change your
-claim refs in one atomic push; add writes the new task's record into the checkout for you to
-commit; close runs the task's acceptance and, only if it passes, commits the record's removal;
-ship pushes your committed work to main as a fast-forward and posts Landed. list writes
-nothing.
+What each writes: board post creates one numbered item; claim and release change your claim
+refs in one atomic push (claiming a task you hold again renews it); start commits the new
+task's record and ships it, then claims; close runs the task's acceptance and, only if it
+passes, commits the record's removal; ship pushes your committed work to main as a
+fast-forward, posts Landed and renews your claim. list writes nothing.
 ";
 
 fn main() -> ExitCode {
@@ -402,35 +400,6 @@ fn run(args: &[String]) -> Result<(), Failure> {
             }
             Ok(())
         }
-        ["tasks", "add", ..] => {
-            let o = parse(rest, &["--accept", "--goal", "--size", "--dep"])?;
-            let repo = o.repo()?;
-            let agent = agent::name(o.agent.as_deref(), &repo)?;
-            let title = match o.positional.as_slice() {
-                [title] => title.clone(),
-                _ => return Err(Failure::Usage("tasks add takes one title".into())),
-            };
-            let accept: Vec<String> = o
-                .accept
-                .clone()
-                .unwrap_or_default()
-                .split_whitespace()
-                .map(str::to_owned)
-                .collect();
-            let (id, path) = tasks::add(
-                &repo,
-                &tasks::NewTask {
-                    title: &title,
-                    goal: o.goal.as_deref().unwrap_or(""),
-                    size: o.size.as_deref().unwrap_or("m"),
-                    accept: &accept,
-                    deps: &o.deps,
-                    agent: &agent,
-                },
-            )?;
-            println!("added {id} at {}: commit it to share it", path.display());
-            Ok(())
-        }
         ["tasks", "start", ..] => {
             let o = parse(
                 rest,
@@ -544,26 +513,6 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 claim.agent, claim.task, claim.lease_until_unix
             );
             claim_post(&o.board(&repo)?, "origin", &claim)
-        }
-        ["tasks", "renew", ..] => {
-            let o = parse(rest, &["--hours"])?;
-            let repo = o.repo()?;
-            let agent = agent::name(o.agent.as_deref(), &repo)?;
-            let queue = o.board(&repo).ok();
-            match claims::renew(
-                &repo,
-                &o.remote(),
-                &agent,
-                o.hours.unwrap_or(claims::DEFAULT_HOURS),
-                queue.as_ref(),
-            )? {
-                Some(c) => println!(
-                    "{} holds {} until unix {}",
-                    c.agent, c.task, c.lease_until_unix
-                ),
-                None => println!("no live claim to renew"),
-            }
-            Ok(())
         }
         ["tasks", "release", ..] => {
             let o = parse(rest, &[])?;

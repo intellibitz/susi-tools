@@ -41,17 +41,19 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     remote's `main`, lists requests addressed to you that you have not
     answered, and says what you hold; `board check` does the middle part.
   - **Writes:** `board post` (the next free number, naming the item before;
-    two posters never share a number), `tasks claim | renew | release` (the
-    three claim refs in one atomic push, each guarded by the value it was read
-    at; refused when another agent holds the task, a live claim of another
-    agent covers a scope, you already hold another live claim, or a
-    dependency is still open), `tasks add` (a number never used before,
-    history included), `tasks close` (runs the acceptance and, only if it
-    passes, commits the record's removal) and `ship` (committed work only, a
-    fast-forward of `main`, then Landed on the Board; renews your claim, or
-    releases it when the ship closed its task). `tasks start` does add,
-    commit, ship and claim in one command, and `tasks finish` does close and
-    ship, in the same formats. The earlier program's
+    two posters never share a number), `tasks start` (adds the task's record
+    under a number never used before, history included, commits and ships
+    it, and claims the task), `tasks claim | release` (the three claim refs in
+    one atomic push, each guarded by the value it was read at; refused when
+    another agent holds the task, a live claim of another agent covers a
+    scope, you already hold another live claim, or a dependency is still
+    open; claiming a task you hold again renews it with the scopes given),
+    `tasks close` (runs the acceptance and, only if it passes, commits the
+    record's removal) and `ship` (committed work only, a fast-forward of
+    `main`, then Landed on the Board; renews your claim, or releases it when
+    the ship closed its task). `tasks finish` does close and ship in one
+    command. The separate `tasks add` and `tasks renew` left on 2026-11-23:
+    nothing called them (`tasks start` adds, a ship renews). The earlier program's
     spellings `workflow board …` and `workflow ship` work too. A task of
     Susi's queue (which holds the ecosystem's tasks and the Board) can claim
     files here or in Susi Core: the claim is kept on the repository whose files
