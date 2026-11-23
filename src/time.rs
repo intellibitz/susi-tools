@@ -19,6 +19,19 @@ pub fn utc_minutes(unix: i64) -> String {
     )
 }
 
+/// `YYYY-MM-DDTHH:MM:SSZ` in UTC.
+pub fn utc_iso(unix: i64) -> String {
+    let days = unix.div_euclid(86_400);
+    let secs = unix.rem_euclid(86_400);
+    let (y, m, d) = civil_from_days(days);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        secs / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    )
+}
+
 /// Howard Hinnant's days-to-civil algorithm (public domain).
 fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;

@@ -64,10 +64,11 @@ Not finished, said plainly:
   sells").
 - **The Windows host has not moved yet.** On the laptop's Windows system the
   earlier development program, built from source kept privately, still
-  answers the commands Susi Tools lacks, and two PowerShell scripts (a speed
-  report, and a runner for a checkout's suite under WSL2) serve that host;
-  the Linux hosts have no earlier program. They go when the agents on the
-  Windows host no longer use them.
+  answers the commands Susi Tools lacks, and one PowerShell script (a runner
+  for a checkout's suite under WSL2; `scripts/speed-report.ps1` was replaced
+  by the portable `susi-tools speed` command) serves that host; the Linux
+  hosts have no earlier program. They go when the agents on the Windows host
+  no longer use them.
 - **Speed.** Nothing an agent waits on may take more than 10 seconds, warm;
   nothing measured on Linux is over the line (Susi's `docs/speed.md`).
 - **The latest compiler.** Susi uses Rust 1.99.0; its Windows start-up code is

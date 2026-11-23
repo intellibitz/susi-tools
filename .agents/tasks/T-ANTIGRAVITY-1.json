@@ -14,5 +14,10 @@
     ]
   },
   "created_by": "ANTIGRAVITY",
-  "created_unix": 1795443197
+  "created_unix": 1795443197,
+  "reuse": {
+    "decision": "build",
+    "searched": "scripts/speed-report.ps1 (Windows PowerShell script being replaced), src/git.rs, src/git_program.rs, src/json.rs, src/time.rs in susi-tools, and Rust stdlib plus cargo/git CLIs",
+    "reason": "Susi Tools takes zero external crate dependencies and needs a portable Rust command replacing the PowerShell script, reusing existing git_program, json and time modules."
+  }
 }

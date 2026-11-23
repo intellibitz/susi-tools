@@ -17,6 +17,7 @@ mod home;
 mod hooks;
 mod json;
 mod ship;
+mod speed;
 mod tasks;
 mod time;
 
@@ -42,6 +43,9 @@ Tasks
   susi-tools tasks finish <id>   close the task (its acceptance runs) and ship: one command
 Shipping
   susi-tools ship
+Speed
+  susi-tools speed [--cold] [--json]
+                                 time everyday cargo, git and check operations against the 10s line
 Harvested code: the second program, local-harvest audit [--range <A..B>] | notices [--check]
 The session start
   susi-tools workflow check      fast-forward a clean checkout, show what is addressed to you,
@@ -81,12 +85,15 @@ fn main() -> ExitCode {
             eprintln!("susi-tools: {message}");
             ExitCode::FAILURE
         }
+        Err(Failure::Silent) => ExitCode::FAILURE,
     }
 }
 
 enum Failure {
     Usage(String),
     Run(String),
+    /// The command already printed its report and exits non-zero.
+    Silent,
 }
 
 impl From<String> for Failure {
@@ -113,6 +120,8 @@ struct Options {
     deps: Vec<String>,
     scopes: Vec<String>,
     hours: Option<i64>,
+    cold: bool,
+    json: bool,
 }
 
 fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
@@ -126,6 +135,17 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
         let name = arg.as_str();
         if !allowed.contains(&name) && !["--repo", "--agent"].contains(&name) {
             return Err(Failure::Usage(format!("{name} does not apply here")));
+        }
+        match name {
+            "--cold" => {
+                o.cold = true;
+                continue;
+            }
+            "--json" => {
+                o.json = true;
+                continue;
+            }
+            _ => {}
         }
         let value = it
             .next()
@@ -520,6 +540,37 @@ fn run(args: &[String]) -> Result<(), Failure> {
                     }
                     after_ship(&repo, remote, &board, &agent)
                 }
+            }
+        }
+        ["speed", ..] => {
+            let o = parse(args.get(1..).unwrap_or(&[]), &["--cold", "--json"])?;
+            if !o.positional.is_empty() {
+                return Err(Failure::Usage("speed takes no positional arguments".into()));
+            }
+            let repo = o.repo()?;
+            let work = repo.work_tree()?;
+            if !work.join("Cargo.toml").is_file() {
+                return Err(Failure::Usage(format!(
+                    "not a Cargo checkout: {}",
+                    work.display()
+                )));
+            }
+            let report = speed::run(
+                &repo,
+                &speed::Config {
+                    cold: o.cold,
+                    agent: o.agent.as_deref(),
+                },
+            )?;
+            if o.json {
+                print!("{}", report.render_json());
+            } else {
+                print!("{}", report.render_table());
+            }
+            if report.passed() {
+                Ok(())
+            } else {
+                Err(Failure::Silent)
             }
         }
         // The detached half of `ship`'s backups (`backup::spawn`); not for agents to type.

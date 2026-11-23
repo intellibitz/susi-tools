@@ -67,6 +67,16 @@ Board, tasks and claims); the rules below are this repository's own.
     says `public-…`: Susi Tools) carry `main` only: a signed
     release tag is published by hand, so the public copies never receive an
     unsigned one.
+  - **Speed:** `speed [--cold] [--json]` times a Cargo checkout's everyday
+    operations (warm `cargo build` with nothing changed and after touching one
+    source file, `cargo nextest run` and `--no-default-features` where the
+    workspace has features, `cargo clippy --workspace --all-targets -- -D
+    warnings`, `cargo fmt --all --check`, `git status`, `git fetch` and
+    `susi-tools workflow check`) against the 10-second line, in plain Rust with
+    no shell or PowerShell, restoring the touched file byte for byte even when
+    a step fails. `--cold` also times a build after `cargo clean` in a
+    throwaway target directory, reported apart. Replaces the retired
+    `scripts/speed-report.ps1`.
   - **The public firewall:** a public repository is pushed only through the
     firewall Susi keeps, named by `git config susi.publicFirewall <path>`: its
     pre-push hook runs the script on every push, as a server's pre-receive
@@ -114,30 +124,26 @@ Board, tasks and claims); the rules below are this repository's own.
   git processes (2026-11-22). Its other commands go to the earlier program
   where it is installed as `local-harvest-legacy` (the Windows host); elsewhere
   they are refused.
-- **Tests:** 70, on made-up repositories and records only, beside the code
+- **Tests:** 75, on made-up repositories and records only, beside the code
   they test. Run them before every ship with `cargo nextest run --offline
   --locked`, then `cargo fmt --all --check` and `cargo clippy --all-targets
-  --offline --locked -- -D warnings`: the suite takes about 0.5 s warm on the
+  --offline --locked -- -D warnings`: the suite takes about 1.2 s warm on the
   laptop's CachyOS system (2026-11-23). On Windows it takes about 40 s
   (2026-11-22), because each write test drives the real commands end to end
   and Windows starts processes almost one at a time; run it there too before
   installing a new build on a Windows host, since code that behaves
   differently on Windows runs only its Linux branch on Linux. Build with
   `cargo build --release --offline`.
-- **Two PowerShell scripts, for the Windows host.**
-  [`scripts/speed-report.ps1`](scripts/speed-report.ps1) times a checkout's
-  everyday operations (build, the whole suite, lint, formatting, the
-  optimised build and the development program's own commands) against the
-  10-second line the CEO set on 2026-11-22: "no more waiting more than 10s for
-  anything - test, releases whatever it is". It measures warm only and needs
-  PowerShell 7 and cargo; it has run on Windows against Susi and on CachyOS
-  against Susi Tools. [`scripts/linux-suite.ps1`](scripts/linux-suite.ps1)
-  runs a checkout's whole suite on Linux as it stands, committed or not: from
-  Windows it copies the checkout onto a WSL2 distribution's own disk (keeping
-  file times, so only what changed is rebuilt) and builds and tests there,
-  with one copy and target folder per agent, and with `-Lint` runs Clippy; on
-  Linux it runs the same steps in place, which `cargo nextest run` does
-  directly. Both go when the Windows host's agents no longer use them.
+- **One PowerShell script, for the Windows host.**
+  [`scripts/linux-suite.ps1`](scripts/linux-suite.ps1) runs a checkout's whole
+  suite on Linux as it stands, committed or not: from Windows it copies the
+  checkout onto a WSL2 distribution's own disk (keeping file times, so only
+  what changed is rebuilt) and builds and tests there, with one copy and target
+  folder per agent, and with `-Lint` runs Clippy; on Linux it runs the same
+  steps in place, which `cargo nextest run` does directly. It goes when the
+  Windows host's agents no longer use it. The earlier
+  `scripts/speed-report.ps1` was removed once `susi-tools speed` replaced it
+  portably in Rust.
 
 This repository is public: its write-only backups are at
 `github.com/intellibitz/susi-tools` and `gitlab.com/intellibitz/susi-tools`.
