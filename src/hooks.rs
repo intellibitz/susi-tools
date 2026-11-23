@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The checks the repositories' Git hooks ask this program for, so no hook depends on the
-//! earlier program (on a Linux host, where it is not installed, they did not run at all until
-//! 2026-11-22). Each check refuses only what its rule names, says why and how to proceed, and
+//! The single rules the Git hooks apply (`hook <stage>`, in `githook.rs`, runs them where a
+//! stage needs them). Each refuses only what its rule names, says why and how to proceed, and
 //! lets everything else through. The contracts are the earlier program's.
 //!
-//! - `workflow root show [dir]`: every agent works under its own root, a folder marked by a
+//! - The agent's own root: every agent works under its own root, a folder marked by a
 //!   `.susi-agent-root` file naming its agent. A commit inside another agent's root is refused,
 //!   and so is a marker that cannot be read; a folder in no root passes (Mandate 77).
 //!   `workflow root init --agent <name> [dir]` marks a root (default `~/susi-agents/<name>`).
-//! - `workflow fresh`: a commit on a checkout more than `susi.maxBehind` (default 20) commits
-//!   behind the remote's `main` is refused, when the remote answered (Mandate 74).
-//! - `workflow reuse (--message-file <file> | <task>)`: a commit for a task of size `m` or `l`
-//!   whose record states no reuse decision is refused (Mandate 78).
-//! - `workflow guard commit|merge`: no commit or merge in a primary checkout (one that is not a
-//!   linked worktree), no plain commit on `main` (Mandate 49), and for a commit the root and
-//!   freshness checks above.
+//! - Freshness: a commit on a checkout more than `susi.maxBehind` (default 20) commits behind
+//!   the remote's `main` is refused, when the remote answered (Mandate 74).
+//! - Reuse: a commit for a task of size `m` or `l` whose record states no reuse decision is
+//!   refused (Mandate 78).
+//! - The worktree guard: no commit or merge in a primary checkout (one that is not a linked
+//!   worktree), no plain commit on `main` (Mandate 49), and for a commit the root and freshness
+//!   checks above.
 //!
 //! Escape hatches, deliberate and visible, never the default: `SUSI_ALLOW_FOREIGN_ROOT`,
 //! `SUSI_ALLOW_STALE`, `SUSI_ALLOW_NO_REUSE`, `SUSI_ALLOW_PRIMARY`, `SUSI_ALLOW_MAIN` (set and
@@ -49,132 +48,43 @@ impl From<String> for Stop {
     }
 }
 
-const USAGE: &str = "\
-  susi-tools workflow root show [dir]              refuse only inside another agent's root
-  susi-tools workflow root init --agent <name> [dir]   mark an agent's root
-  susi-tools workflow fresh                        refuse only far behind the remote's main
-  susi-tools workflow reuse --message-file <file>  refuse a sized task with no reuse decision
-  susi-tools workflow reuse <task>
-  susi-tools workflow guard commit|merge           refuse a primary checkout or a commit on main";
-
-/// `workflow <verb> ...` for the four hook checks; `args` starts at the verb. The global options
-/// `--agent`, `--remote` and `--repo` may appear anywhere.
-pub fn run_cli(args: &[&str]) -> Result<(), Stop> {
+/// `workflow root init [--agent <name>] [dir]`; `args` follow `init`.
+pub fn root_init_cli(args: &[&str]) -> Result<(), Stop> {
+    let mut agent = None;
     let mut rest = Vec::new();
-    let (mut agent, mut remote, mut repo) = (None, "origin".to_owned(), None);
     let mut it = args.iter();
     while let Some(arg) = it.next() {
-        let slot = match *arg {
-            "--agent" => &mut agent,
-            "--repo" => &mut repo,
-            "--remote" => {
-                remote = it
-                    .next()
-                    .map(|v| (*v).to_owned())
-                    .ok_or_else(|| Stop::Usage("--remote needs a value".into()))?;
-                continue;
+        match *arg {
+            "--agent" => {
+                agent = Some(
+                    it.next()
+                        .map(|v| (*v).to_owned())
+                        .ok_or_else(|| Stop::Usage("--agent needs a value".into()))?,
+                )
             }
-            other => {
-                rest.push(other);
-                continue;
+            other if other.starts_with('-') => {
+                return Err(Stop::Usage(format!("root init does not take {other}")))
             }
-        };
-        *slot = Some(
-            it.next()
-                .map(|v| (*v).to_owned())
-                .ok_or_else(|| Stop::Usage(format!("{arg} needs a value")))?,
-        );
+            other => rest.push(other),
+        }
     }
-    let cwd = match repo {
-        Some(dir) => PathBuf::from(dir),
-        None => std::env::current_dir().map_err(|e| format!("no current folder: {e}"))?,
+    let agent = agent
+        .or_else(|| std::env::var("SUSI_AGENT").ok())
+        .filter(|a| !a.trim().is_empty())
+        .ok_or_else(|| Stop::Usage("root init needs --agent <name>".into()))?;
+    let dir = match rest.as_slice() {
+        [] => default_root(&agent)?,
+        [dir] => PathBuf::from(dir),
+        _ => return Err(Stop::Usage("root init takes at most one folder".into())),
     };
-    run(&rest, &cwd, &remote, agent.as_deref())
-}
-
-fn run(args: &[&str], cwd: &Path, remote: &str, agent: Option<&str>) -> Result<(), Stop> {
-    if args.iter().any(|a| matches!(*a, "--help" | "-h")) {
-        println!("{USAGE}");
-        return Ok(());
-    }
-    match args {
-        ["root", "show", rest @ ..] => {
-            let dir = match rest {
-                [] => cwd.to_path_buf(),
-                [dir] => PathBuf::from(dir),
-                _ => return Err(Stop::Usage("root show takes at most one folder".into())),
-            };
-            let asking = asking(agent, Repo::open(&dir).ok().as_ref());
-            let verdict = verdict(&dir, asking.as_deref())?;
-            println!("{}", describe(&verdict, &dir));
-            match root_refusal(&verdict) {
-                Some(why) => Err(Stop::Refused(why)),
-                None => Ok(()),
-            }
-        }
-        ["root", "init", rest @ ..] => {
-            let agent = agent
-                .map(str::to_owned)
-                .or_else(|| std::env::var("SUSI_AGENT").ok())
-                .filter(|a| !a.trim().is_empty())
-                .ok_or_else(|| Stop::Usage("root init needs --agent <name>".into()))?;
-            let dir = match rest {
-                [] => default_root(&agent)?,
-                [dir] => PathBuf::from(dir),
-                _ => return Err(Stop::Usage("root init takes at most one folder".into())),
-            };
-            let dir = init(&dir, &agent, crate::time::now_unix())?;
-            println!("{} is the root of agent `{agent}`", dir.display());
-            println!("   keep your clones, worktrees, build targets and scratch files under it");
-            Ok(())
-        }
-        ["root", ..] => Err(Stop::Usage("root takes show or init".into())),
-        ["fresh"] => {
-            let repo = Repo::open(cwd)?;
-            fresh(&repo, remote)
-        }
-        ["reuse", "--message-file", file] => {
-            let message = std::fs::read_to_string(file)
-                .map_err(|e| Stop::Usage(format!("cannot read {file}: {e}")))?;
-            let subject = message.lines().next().unwrap_or("");
-            if subject.starts_with("Merge ") || subject.starts_with("Revert ") {
-                return Ok(());
-            }
-            let repo = Repo::open(cwd)?;
-            reuse(repo.work_tree()?, &tasks_in_message(&message))
-        }
-        ["reuse", task] if task.starts_with("T-") => {
-            let repo = Repo::open(cwd)?;
-            reuse(repo.work_tree()?, &[(*task).to_owned()])
-        }
-        ["reuse", ..] => Err(Stop::Usage(
-            "reuse takes --message-file <file> or one task id".into(),
-        )),
-        ["guard", stage @ ("commit" | "merge")] => {
-            let repo = Repo::open(cwd)?;
-            guard(&repo, *stage == "commit", remote, agent)
-        }
-        ["guard", ..] => Err(Stop::Usage(
-            "guard takes commit or merge (a push is checked by the pre-push hook and the server)"
-                .into(),
-        )),
-        _ => Err(Stop::Usage(format!("unknown check {:?}", args.join(" ")))),
-    }
+    let dir = init(&dir, &agent, crate::time::now_unix())?;
+    println!("{} is the root of agent `{agent}`", dir.display());
+    println!("   keep your clones, worktrees, build targets and scratch files under it");
+    Ok(())
 }
 
 pub fn allowed(var: &str) -> bool {
     std::env::var_os(var).is_some_and(|v| !v.is_empty() && v != "0")
-}
-
-/// Who is asking: `--agent`, `$SUSI_AGENT` or `git config susi.agent`, if any.
-fn asking(given: Option<&str>, repo: Option<&Repo>) -> Option<String> {
-    match repo {
-        Some(repo) => crate::agent::name(given, repo).ok(),
-        None => given
-            .map(str::to_owned)
-            .or_else(|| std::env::var("SUSI_AGENT").ok())
-            .filter(|a| !a.trim().is_empty()),
-    }
 }
 
 /// An agent's root: its folder, its agent and the other names that agent goes by.
@@ -182,14 +92,6 @@ pub struct Root {
     pub dir: PathBuf,
     pub agent: String,
     pub aliases: Vec<String>,
-}
-
-/// Whose root a folder is in, for the agent asking.
-pub enum Verdict {
-    Own(Root),
-    Foreign(Root, String),
-    UnknownAgent(Root),
-    Unregistered,
 }
 
 /// The nearest root that holds `dir`, or `None` when no marker is found above it. A marker that
@@ -228,41 +130,20 @@ fn same_agent(root: &Root, asking: &str) -> bool {
         .any(|token| token == me)
 }
 
-pub fn verdict(dir: &Path, asking: Option<&str>) -> Result<Verdict, String> {
+/// The root that holds `dir` when it is another agent's than `asking`'s, with who is asking.
+/// The agent's own root, a folder in no root, and an agent who does not say who it is pass.
+pub fn foreign_root(dir: &Path, asking: Option<&str>) -> Result<Option<(Root, String)>, String> {
     let Some(root) = find_root(dir)? else {
-        return Ok(Verdict::Unregistered);
+        return Ok(None);
     };
     Ok(match asking.filter(|a| !a.trim().is_empty()) {
-        None => Verdict::UnknownAgent(root),
-        Some(asking) if same_agent(&root, asking) => Verdict::Own(root),
-        Some(asking) => Verdict::Foreign(root, asking.to_owned()),
+        Some(asking) if !same_agent(&root, asking) => Some((root, asking.to_owned())),
+        _ => None,
     })
 }
 
-fn describe(verdict: &Verdict, dir: &Path) -> String {
-    match verdict {
-        Verdict::Own(root) => format!("{} is your root", root.dir.display()),
-        Verdict::Foreign(root, asking) => format!(
-            "{} is the root of agent `{}`; you are `{asking}`",
-            root.dir.display(),
-            root.agent
-        ),
-        Verdict::UnknownAgent(root) => format!(
-            "{} is the root of agent `{}`; say who you are with --agent or SUSI_AGENT",
-            root.dir.display(),
-            root.agent
-        ),
-        Verdict::Unregistered => format!(
-            "{} is in no agent root; make yours: susi-tools workflow root init --agent <name>",
-            dir.display()
-        ),
-    }
-}
-
-pub fn root_refusal(verdict: &Verdict) -> Option<String> {
-    let Verdict::Foreign(root, asking) = verdict else {
-        return None;
-    };
+pub fn root_refusal(foreign: Option<&(Root, String)>) -> Option<String> {
+    let (root, asking) = foreign?;
     if allowed("SUSI_ALLOW_FOREIGN_ROOT") {
         return None;
     }
@@ -392,14 +273,11 @@ pub fn reuse_gap(record: &Json) -> Option<&'static str> {
 }
 
 /// Refuse a commit for a task whose record in this checkout owes a reuse decision. A task with
-/// no record here (another repository's queue, or closed) has nothing to check, and neither has
-/// a commit that changes only task records (`tasks start` commits a new record before its agent
-/// has looked; no code lands with it).
+/// no record here (another repository's queue, or closed) has nothing to check. (A commit that
+/// changes only task records never asks: `tasks start` commits a new record before its agent
+/// has looked, and commit-msg lets such a commit through first.)
 pub fn reuse(work: &Path, tasks: &[String]) -> Result<(), Stop> {
     if allowed("SUSI_ALLOW_NO_REUSE") {
-        return Ok(());
-    }
-    if only_task_records_staged(work) {
         return Ok(());
     }
     for id in tasks {
@@ -419,25 +297,14 @@ pub fn reuse(work: &Path, tasks: &[String]) -> Result<(), Stop> {
     Ok(())
 }
 
-/// Whether the staged change touches nothing but task records.
-fn only_task_records_staged(work: &Path) -> bool {
-    let Ok(repo) = Repo::open(work) else {
-        return false;
-    };
-    let Some(staged) = repo.try_read(&["diff", "--cached", "--name-only"]) else {
-        return false;
-    };
-    let paths: Vec<&str> = staged.lines().filter(|l| !l.trim().is_empty()).collect();
-    !paths.is_empty() && paths.iter().all(|p| p.starts_with(".agents/tasks/"))
-}
-
 /// Mandate 77: refuse a checkout inside another agent's root, or under a marker that cannot be
 /// read.
 pub fn own_root(repo: &Repo, agent: Option<&str>) -> Result<(), Stop> {
     let work = repo.work_tree()?;
-    let verdict = verdict(work, asking(agent, Some(repo)).as_deref())
+    let asking = crate::agent::name(agent, repo).ok();
+    let foreign = foreign_root(work, asking.as_deref())
         .map_err(|why| Stop::Refused(format!("❌ Mandate 77: {why}")))?;
-    match root_refusal(&verdict) {
+    match root_refusal(foreign.as_ref()) {
         Some(why) => Err(Stop::Refused(why)),
         None => Ok(()),
     }

@@ -14,12 +14,12 @@
 //!
 //! The stages:
 //!
-//! - `pre-commit`: the agent's own root and a fresh checkout (`workflow root | fresh`), then the
-//!   staged change: no new blob of 1 MiB or more, no secret-shaped line, no added `dbg!(`,
+//! - `pre-commit`: the agent's own root and a fresh checkout (`hooks.rs`), then the staged
+//!   change: no new blob of 1 MiB or more, no secret-shaped line, no added `dbg!(`,
 //!   identical `CLAUDE.md` and `GEMINI.md` pointers, and the staged Rust files formatted.
 //! - `commit-msg <file>`: a subject that says what; a `Task:` trailer naming a task recorded or
 //!   claimed here; for a claimed task, the claim is yours and covers every staged file; a sized
-//!   task states where its agent looked (`workflow reuse`).
+//!   task states where its agent looked (the reuse rule, `hooks.rs`).
 //! - `pre-merge-commit`: the worktree rule, where asked for.
 //! - `pre-push <remote> [url]`: refs and records on standard input, as Git gives them. Only
 //!   `main` is a branch, and it only moves forward; agents publish to `refs/agents/<name>`
@@ -32,7 +32,7 @@
 //! checked here: each public repository's canonical server refuses it at push, with the same
 //! patterns, and a public program does not spell out the private product's markers.
 //!
-//! Escape hatches, deliberate and visible, never the default: those of `workflow` (see
+//! Escape hatches, deliberate and visible, never the default: those of the single rules (see
 //! `hooks.rs`) and `SUSI_ALLOW_SHARED_HOME` for the isolation check.
 
 use crate::git::Repo;

@@ -76,9 +76,10 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     The public repositories' boundary, that nothing of the private product
     enters them, is their canonical server's to enforce at push, with the same
     patterns, so this public program never spells out the product's markers.
-    The single checks stay callable by hand: `workflow root show | root init
-    --agent <name>`, `workflow fresh`, `workflow reuse`, `workflow guard commit
-    | merge`.
+    The rules run only as these stages: the separate `workflow root show`,
+    `fresh`, `reuse` and `guard` checks the hooks called before 2026-11-23 left
+    on that day. `workflow root init --agent <name> [dir]` marks an agent's
+    root, the folder the root rule looks for.
   - **No release command since 2026-11-22.** It cut Susi Core's releases
     (v0.21.72 was its first and last), and Susi Core has had no program and cut
     no releases since that day; it left with them, and history keeps it.
@@ -100,7 +101,7 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 66, on made-up repositories and records only, run on Linux before every ship:
+  - **Tests:** 65, on made-up repositories and records only, run on Linux before every ship:
     0.5 s for the tests on the laptop's CachyOS system (`cargo nextest run`, warm, 2026-11-23);
     from Windows through WSL2 (`scripts/linux-suite.ps1` below) about 2.5 s for the tests, 4.5
     to 4.8 s for the whole run with nothing changed and 7.4 to 9.0 s after a one-file edit

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `susi-tools hook <stage>`, what the Git hooks of Susi and Susi Core run, driven end to end
-//! against made-up repositories.
+//! `susi-tools hook <stage>`, what the Git hooks of Susi and Susi Core run, and the agent root
+//! the root rule checks (`workflow root init`), driven end to end against made-up repositories.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -92,9 +92,16 @@ impl Fixture {
     /// `hook <args>` in `dir` with a clean environment: no agent, no escape hatch, no isolation
     /// settings, the fixture as home; `env` adds to it.
     fn hook(&self, dir: &Path, args: &[&str], stdin: &str, env: &[(&str, &str)]) -> Output {
+        let args: Vec<&str> = std::iter::once("hook")
+            .chain(args.iter().copied())
+            .collect();
+        self.run(dir, &args, stdin, env)
+    }
+
+    /// The program with `args` in `dir`, in the same clean environment as `hook`.
+    fn run(&self, dir: &Path, args: &[&str], stdin: &str, env: &[(&str, &str)]) -> Output {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_susi-tools"));
         cmd.current_dir(dir)
-            .arg("hook")
             .args(args)
             .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -266,6 +273,188 @@ fn the_worktree_rule_applies_where_a_repository_asks_for_it() {
         .hook(&work, &["pre-merge-commit"], "", &[])
         .status
         .success());
+}
+
+#[test]
+fn the_worktree_rule_passes_a_branch_and_a_merge_on_main_but_no_plain_commit_there() {
+    let fx = Fixture::new("worktree-main");
+    let work = fx.work();
+    let branch = fx.root.join("wt-branch");
+    fx.git(
+        &work,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "a/b",
+            branch.to_str().unwrap(),
+        ],
+    );
+    let ok = fx.hook(&branch, &["pre-commit", "--worktrees"], "", &[]);
+    assert!(ok.status.success(), "{}", err(&ok));
+
+    // A worktree on main: a merge there is the remedy and passes; a plain commit does not.
+    fx.git(&work, &["switch", "-q", "-c", "elsewhere"]);
+    let on_main = fx.root.join("wt-main");
+    fx.git(
+        &work,
+        &["worktree", "add", "-q", on_main.to_str().unwrap(), "main"],
+    );
+    let commit = fx.hook(&on_main, &["pre-commit", "--worktrees"], "", &[]);
+    assert!(!commit.status.success());
+    assert!(
+        err(&commit).contains("no direct commits on main"),
+        "{}",
+        err(&commit)
+    );
+    let merge = fx.hook(&on_main, &["pre-merge-commit", "--worktrees"], "", &[]);
+    assert!(merge.status.success(), "{}", err(&merge));
+}
+
+#[test]
+fn the_root_rule_refuses_only_another_agents_root_or_a_damaged_marker() {
+    let fx = Fixture::new("root");
+    let alpha = fx.root.join("agents/alpha");
+    let init = |agent: &str, dir: &Path| {
+        fx.run(
+            &fx.root,
+            &[
+                "workflow",
+                "root",
+                "init",
+                "--agent",
+                agent,
+                dir.to_str().unwrap(),
+            ],
+            "",
+            &[],
+        )
+    };
+    let made = init("alpha", &alpha);
+    assert!(made.status.success(), "{}", err(&made));
+    let marker = std::fs::read_to_string(alpha.join(".susi-agent-root")).unwrap();
+    assert!(
+        marker.contains("\"schema\":\"susi-agent-root-v1\""),
+        "{marker}"
+    );
+    assert!(marker.contains("\"agent\":\"alpha\""), "{marker}");
+    let again = init("alpha", &alpha);
+    assert!(
+        again.status.success(),
+        "marking it again changes nothing: {}",
+        err(&again)
+    );
+    let inside = init("beta", &alpha.join("inner"));
+    assert!(!inside.status.success(), "a root inside another is refused");
+
+    // A checkout in alpha's root: alpha, under any spelling, and an agent who does not say
+    // who it is may commit there; beta may not, and may commit outside it.
+    let clone = alpha.join("work");
+    fx.git(
+        &fx.root,
+        &[
+            "clone",
+            "-q",
+            "--template=",
+            "origin.git",
+            clone.to_str().unwrap(),
+        ],
+    );
+    let own = fx.hook(&clone, &["pre-commit"], "", &[("SUSI_AGENT", "Alpha")]);
+    assert!(own.status.success(), "{}", err(&own));
+    let foreign = fx.hook(&clone, &["pre-commit"], "", &[("SUSI_AGENT", "beta")]);
+    assert!(!foreign.status.success());
+    assert!(err(&foreign).contains("Mandate 77"), "{}", err(&foreign));
+    let nobody = fx.hook(&clone, &["pre-commit"], "", &[]);
+    assert!(nobody.status.success(), "{}", err(&nobody));
+    let outside = fx.hook(&fx.work(), &["pre-commit"], "", &[("SUSI_AGENT", "beta")]);
+    assert!(outside.status.success(), "{}", err(&outside));
+
+    std::fs::write(alpha.join(".susi-agent-root"), "not json").unwrap();
+    let damaged = fx.hook(&clone, &["pre-commit"], "", &[("SUSI_AGENT", "alpha")]);
+    assert!(!damaged.status.success(), "a damaged marker refuses");
+}
+
+#[test]
+fn pre_commit_refuses_only_far_behind_and_never_when_the_remote_is_silent() {
+    let fx = Fixture::new("fresh");
+    let other = fx.root.join("other");
+    fx.git(
+        &fx.root,
+        &["clone", "-q", "--template=", "origin.git", "other"],
+    );
+    for n in ["a", "b", "c"] {
+        std::fs::write(other.join(format!("{n}.txt")), n).unwrap();
+        fx.git(&other, &["add", "-A"]);
+        fx.git(&other, &["commit", "-q", "-m", n]);
+    }
+    fx.git(&other, &["push", "-q", "origin", "HEAD:main"]);
+
+    let work = fx.work();
+    fx.git(&work, &["config", "susi.maxBehind", "2"]);
+    let behind = fx.hook(&work, &["pre-commit"], "", &[]);
+    assert!(!behind.status.success());
+    assert!(
+        err(&behind).contains("3 commits behind"),
+        "{}",
+        err(&behind)
+    );
+
+    fx.git(&work, &["config", "susi.maxBehind", "5"]);
+    let within = fx.hook(&work, &["pre-commit"], "", &[]);
+    assert!(within.status.success(), "{}", err(&within));
+
+    fx.git(&work, &["config", "susi.maxBehind", "0"]);
+    fx.git(
+        &work,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            fx.root.join("gone.git").to_str().unwrap(),
+        ],
+    );
+    let silent = fx.hook(&work, &["pre-commit"], "", &[]);
+    assert!(silent.status.success(), "{}", err(&silent));
+}
+
+#[test]
+fn commit_msg_refuses_a_sized_task_that_states_no_reuse_decision() {
+    let fx = Fixture::new("reuse");
+    let work = fx.work();
+    let record = |reuse: &str| {
+        fx.write(
+            ".agents/tasks/T-A-1.json",
+            &format!(r#"{{"id":"T-A-1","size":"m","created_unix":1795000000{reuse}}}"#),
+        )
+    };
+    record("");
+    fx.write("code.rs", "// code\n");
+    fx.git(&work, &["add", "code.rs"]);
+    let msg = fx.message("feat: a thing\n\nTask: T-A-1\n");
+    let owed = fx.hook(&work, &["commit-msg", &msg], "", &[]);
+    assert!(!owed.status.success());
+    assert!(err(&owed).contains("Mandate 78"), "{}", err(&owed));
+
+    record(r#","reuse":{"decision":"build","searched":"here","reason":"nothing fit"}"#);
+    let stated = fx.hook(&work, &["commit-msg", &msg], "", &[]);
+    assert!(stated.status.success(), "{}", err(&stated));
+
+    // A commit that only adds the record (what `tasks start` makes) owes nothing yet.
+    record("");
+    fx.git(&work, &["reset", "-q"]);
+    fx.git(&work, &["add", ".agents/tasks/T-A-1.json"]);
+    let record_only = fx.hook(&work, &["commit-msg", &msg], "", &[]);
+    assert!(record_only.status.success(), "{}", err(&record_only));
+
+    // A task of another repository's queue, claimed here: no record here, nothing to check.
+    fx.git(&work, &["reset", "-q"]);
+    fx.git(&work, &["add", "code.rs"]);
+    fx.claim("T-B-9", "alpha", &["code.rs"]);
+    let msg = fx.message("feat: another\n\nTask: T-B-9\n");
+    let elsewhere = fx.hook(&work, &["commit-msg", &msg], "", &[("SUSI_AGENT", "alpha")]);
+    assert!(elsewhere.status.success(), "{}", err(&elsewhere));
 }
 
 #[test]

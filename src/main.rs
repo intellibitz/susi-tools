@@ -50,11 +50,9 @@ The session start
 The Git hooks of Susi and Susi Core: each .githooks/<stage> is one line that runs
   susi-tools hook pre-commit | commit-msg <file> | pre-merge-commit | pre-push <remote> [url]
                   | post-checkout <old> <new> <flag>   (susi-tools hook --help for the options)
-The checks the hooks run, one at a time (each refuses only what its rule names)
-  susi-tools workflow root show [dir] | root init --agent <name> [dir]
-  susi-tools workflow fresh       refuse a commit far behind the remote's main
-  susi-tools workflow reuse --message-file <file> | <task>
-  susi-tools workflow guard commit|merge
+Your agent root, which holds your clones, worktrees, build targets and scratch (the hooks
+refuse a commit inside another agent's root)
+  susi-tools workflow root init --agent <name> [dir]   (default ~/susi-agents/<name>)
 
 The earlier program's spellings work too: workflow board list|post|check, workflow ship.
 Any other command goes to the earlier program, installed beside this one as susi-tools-legacy.
@@ -642,11 +640,12 @@ fn run(args: &[String]) -> Result<(), Failure> {
             hooks::Stop::Usage(m) => Failure::Usage(m),
             hooks::Stop::Refused(m) => Failure::Run(m),
         }),
-        ["workflow", "root" | "fresh" | "reuse" | "guard", ..] => hooks::run_cli(&words[1..])
-            .map_err(|stop| match stop {
+        ["workflow", "root", "init", ..] => {
+            hooks::root_init_cli(&words[3..]).map_err(|stop| match stop {
                 hooks::Stop::Usage(m) => Failure::Usage(m),
                 hooks::Stop::Refused(m) => Failure::Run(m),
-            }),
+            })
+        }
         _ => forward(args),
     }
 }
