@@ -1,0 +1,19 @@
+{
+  "id": "T-CLAUDE-8",
+  "title": "gates: the customer build's lints in a lane of their own",
+  "goal": "After an edit to a deep crate Susi's gates took 9.3 s, the lints lane the longest; the customer build's lints use their own target folder",
+  "size": "xs",
+  "deps": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--test",
+      "speed"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795461451
+}
