@@ -71,7 +71,9 @@ Not finished, said plainly:
   Since 2026-11-23 it holds the rules of Susi's and Susi Core's Git hooks
   (`susi-tools hook <stage>`); their hook files are one-line calls to it.
 - **Speed.** Nothing an agent waits on may take more than 10 seconds, warm.
-  Over the line today: Susi's optimised release build (about 20 s on Linux).
+  Nothing measured is over the line on Linux today: Susi's release build, which
+  took about 20 s, takes 4.0 to 4.8 s after a one-file change and 0.12 s with
+  nothing changed (Susi's `docs/speed.md`, CachyOS, 2026-11-23).
 - **The latest compiler.** Susi and Susi Core use Rust 1.99.0; Susi's Windows
   start-up code is checked only against it and must be re-checked before the
   compiler moves. Susi Tools names no compiler version.

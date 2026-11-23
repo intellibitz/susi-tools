@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `local-harvest`, the name Susi's release gate and history call the harvest tool by. Its
-//! `audit` is Susi Tools' rebuilt one (`susi-tools harvest audit`), the same checks and messages
+//! `audit` is Susi Tools' rebuilt one (`src/harvest.rs`), the same checks and messages
 //! asked of Git in batches; every other command (`intake`, `scan`, `import`, `notices`,
 //! `route`, `pickup`, `raw-features`, `harvested-by`) goes to the earlier program, installed
 //! beside this one as `local-harvest-legacy` (or named by `LOCAL_HARVEST_LEGACY`), until it is

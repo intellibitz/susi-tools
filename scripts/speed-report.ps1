@@ -14,8 +14,8 @@
     cargo-nextest when it is installed and with cargo test (both timed after the tests are built),
     Clippy, rustfmt and, with -Release, the optimised build. When the development program
     susi-tools is on PATH it also times its check, Board-check and task-list commands, run exactly
-    as an agent runs them and with their usual effects (the check may release the agent's own
-    claims on finished tasks, Mandate 85).
+    as an agent runs them and with their usual effects (the check fast-forwards a clean checkout
+    that is behind the remote's main).
 
     It knows nothing of any one product and depends only on cargo, so it runs against any Cargo
     checkout. Verified on 2026-11-22 against Susi on Windows (PowerShell 7); not yet run on
@@ -46,7 +46,6 @@ if (-not (Test-Path (Join-Path $Checkout 'Cargo.toml'))) {
 }
 Set-Location $Checkout
 $env:SUSI_AGENT = $Agent
-$env:SUSI_NO_AUTO_RELEASE_SYNC = '1'
 $rows = New-Object System.Collections.Generic.List[object]
 
 function Measure-Op([string]$Name, [scriptblock]$Block) {

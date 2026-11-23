@@ -38,7 +38,7 @@ Tasks
   susi-tools tasks release <id>
   susi-tools tasks close <id>
   susi-tools tasks start <title> --accept <command> --scope <path>... [--goal <text>] [--size xs|s|m|l]
-                         [--hours <1-24>]
+                         [--dep <id>]... [--hours <1-24>]
                                  add, commit and ship the task's record, then claim it: one command
   susi-tools tasks finish <id>   close the task (its acceptance runs) and ship: one command
 Shipping

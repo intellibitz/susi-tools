@@ -394,7 +394,7 @@ pub fn reuse_gap(record: &Json) -> Option<&'static str> {
 /// Refuse a commit for a task whose record in this checkout owes a reuse decision. A task with
 /// no record here (another repository's queue, or closed) has nothing to check, and neither has
 /// a commit that changes only task records (`tasks start` commits a new record before its agent
-/// has looked; no code lands with it), as Susi Core's hook already exempts.
+/// has looked; no code lands with it).
 pub fn reuse(work: &Path, tasks: &[String]) -> Result<(), Stop> {
     if allowed("SUSI_ALLOW_NO_REUSE") {
         return Ok(());

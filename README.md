@@ -100,9 +100,11 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 53, on made-up repositories and records only, run on Linux before every ship
-    (`scripts/linux-suite.ps1` below): about 2.5 s for the tests, 4.5 to 4.8 s for the whole
-    run from Windows with nothing changed and 7.4 to 9.0 s after a one-file edit (2026-11-22).
+  - **Tests:** 66, on made-up repositories and records only, run on Linux before every ship:
+    0.5 s for the tests on the laptop's CachyOS system (`cargo nextest run`, warm, 2026-11-23);
+    from Windows through WSL2 (`scripts/linux-suite.ps1` below) about 2.5 s for the tests, 4.5
+    to 4.8 s for the whole run with nothing changed and 7.4 to 9.0 s after a one-file edit
+    (2026-11-22).
     On Windows the same suite takes about 40 s, because each write test drives the real
     commands end to end (a `tasks start` starts 49 `git` processes) and Windows starts processes
     almost one at a time. History: on Windows the whole suite took 59 s on 2026-11-22 (the write tests, each building scratch
@@ -116,7 +118,7 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     main and where they meet in two calls instead of four: the suite 50 -> 48 s, `workflow
     check` on Susi 3.7-4.3 -> 2.9-3.5 s, an empty ship 1.3 -> 1.1 s. The suite stays far over
     the line on Windows while each process start costs 100 ms or more there; on Linux it takes
-    about 2 s.
+    under a second (above).
   - **Installed since 2026-11-22**, in place of the earlier program, on the
     Windows development host (`~/.cargo/bin/susi-tools`). The earlier program
     stays installed beside it as `susi-tools-legacy`: any command this one does

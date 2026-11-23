@@ -4,7 +4,7 @@ name = "susi-tools"
 version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "The development program of the Susi AI OS ecosystem: Board, tasks, worktrees, shipping and speed, over plain Git."
+description = "The development programs of the Susi AI OS ecosystem, over plain Git: the Board, tasks and claims, shipping, the Git hooks' rules and the harvest audit."
 publish = false
 
 # No dependencies on purpose: Susi Tools stands alone (decided 2026-11-22), builds offline from
