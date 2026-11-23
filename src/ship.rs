@@ -2,6 +2,11 @@
 //! Ship: publish a checkout's committed work to the remote's `main` as a fast-forward, then say
 //! so on the Board. Nothing is forced, merged or rewritten here: a `main` that has moved on is
 //! merged by the agent, who resolves what the merge needs, and then ships again.
+//!
+//! In a clone set for landing (`git config susi.land host`: a cloud agent's, whose machine is too
+//! small for the gates inside the 10-second line) the same work goes to `refs/agents/<agent>`
+//! instead, for a company host to gate and land (`land`, the CEO, 2026-11-24: "Company host
+//! lands it").
 
 use crate::git::Repo;
 
@@ -12,9 +17,36 @@ pub enum Shipped {
         to: String,
         tasks: Vec<String>,
     },
+    /// Pushed to `refs/agents/<agent>` for a company host to land.
+    ForLanding {
+        main: String,
+        to: String,
+        agent_ref: String,
+        tasks: Vec<String>,
+    },
 }
 
-pub fn ship(repo: &Repo, remote: &str) -> Result<Shipped, String> {
+/// Whether this clone ships for landing (`git config susi.land host`).
+pub fn landing_mode(repo: &Repo) -> bool {
+    repo.try_read(&["config", "--get", "susi.land"])
+        .is_some_and(|v| v.trim() == "host")
+}
+
+/// The ref an agent's work waits in for landing: `refs/agents/<agent>`, one segment.
+pub fn agent_ref(agent: &str) -> Result<String, String> {
+    let name: String = agent
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .collect();
+    if name.is_empty() || name.starts_with('.') {
+        return Err(format!("`{agent}` names no agent ref"));
+    }
+    Ok(format!("refs/agents/{name}"))
+}
+
+pub fn ship(repo: &Repo, remote: &str, agent: &str) -> Result<Shipped, String> {
     repo.work_tree()?;
     let dirty = repo.read(&["status", "--porcelain", "--untracked-files=no"])?;
     if !dirty.trim().is_empty() {
@@ -40,6 +72,16 @@ pub fn ship(repo: &Repo, remote: &str) -> Result<Shipped, String> {
         ));
     }
     let tasks = trailers(repo, &format!("{tip}..{head}"))?;
+    if landing_mode(repo) {
+        let agent_ref = agent_ref(agent)?;
+        repo.read(&["push", "--quiet", remote, &format!("{head}:{agent_ref}")])?;
+        return Ok(Shipped::ForLanding {
+            main: tip,
+            to: head,
+            agent_ref,
+            tasks,
+        });
+    }
     repo.read(&[
         "push",
         "--quiet",
@@ -55,7 +97,7 @@ pub fn ship(repo: &Repo, remote: &str) -> Result<Shipped, String> {
 }
 
 /// The `Task:` trailers of the commits in `range`, in order, once each.
-fn trailers(repo: &Repo, range: &str) -> Result<Vec<String>, String> {
+pub fn trailers(repo: &Repo, range: &str) -> Result<Vec<String>, String> {
     let text = repo.read(&[
         "log",
         "--reverse",

@@ -17,6 +17,7 @@ mod githook;
 mod home;
 mod hooks;
 mod json;
+mod land;
 mod ship;
 mod speed;
 mod tasks;
@@ -47,6 +48,10 @@ Shipping
 Speed
   susi-tools speed [--cold] [--json]
                                  time everyday cargo, git and check operations against the 10s line
+  susi-tools land [--target <triple>]...
+                                 on a company host: gate the work agents shipped for landing
+                                 (refs/agents/<name>, from a clone with `git config susi.land host`)
+                                 and fast-forward main with what passes; the Board says which
   susi-tools gates [--target <triple>]...
                                  every gate before a ship (tests, tests without default features,
                                  format, Clippy, Clippy per target), side by side, inside the line
@@ -499,7 +504,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
             let remote = REMOTE;
-            match ship::ship(&repo, remote)? {
+            match ship::ship(&repo, remote, &agent)? {
                 ship::Shipped::Nothing(tip) => {
                     println!(
                         "nothing to ship: {remote}'s main ({}) already has it",
@@ -544,7 +549,165 @@ fn run(args: &[String]) -> Result<(), Failure> {
                     }
                     after_ship(&repo, remote, &board, &agent)
                 }
+                ship::Shipped::ForLanding {
+                    main,
+                    to,
+                    agent_ref,
+                    tasks: shipped,
+                } => {
+                    println!(
+                        "shipped {} to {remote}'s {agent_ref} for a company host to gate and land (main is {})",
+                        &to[..12],
+                        &main[..12]
+                    );
+                    let title = format!("Land {} from {agent_ref}", &to[..12]);
+                    let mut body = format!("mode=for_landing source={to} main={main}");
+                    if !shipped.is_empty() {
+                        body.push_str(&format!("\nTasks: {}", shipped.join(", ")));
+                    }
+                    let board = o.board(&repo)?;
+                    post_line(
+                        &board,
+                        REMOTE,
+                        &board::Post {
+                            kind: "request",
+                            agent: &agent,
+                            title: &title,
+                            body: &body,
+                            to: None,
+                            re: None,
+                            task: shipped.first().map(String::as_str),
+                        },
+                    )
+                }
             }
+        }
+        ["land", ..] => {
+            // A company host's lander: gates what agents shipped for landing, lands what passes.
+            let rest = args.get(1..).unwrap_or(&[]);
+            let mut targets = Vec::new();
+            let mut plain = Vec::new();
+            let mut i = 0;
+            while i < rest.len() {
+                if rest[i] == "--target" {
+                    let triple = rest
+                        .get(i + 1)
+                        .ok_or_else(|| Failure::Usage("--target takes a target triple".into()))?;
+                    targets.push(triple.to_string());
+                    i += 2;
+                } else {
+                    plain.push(rest[i].clone());
+                    i += 1;
+                }
+            }
+            let o = parse(&plain, &[])?;
+            let repo = o.repo()?;
+            let agent = agent::name(o.agent.as_deref(), &repo)?;
+            let Some(outcomes) = land::land(&repo, REMOTE, &targets).map_err(Failure::Run)? else {
+                println!("another land is running here: nothing done");
+                return Ok(());
+            };
+            if outcomes.is_empty() {
+                println!("nothing to land");
+                return Ok(());
+            }
+            let board = o.board(&repo)?;
+            for outcome in &outcomes {
+                let to_agent = outcome.agent().to_owned();
+                let (kind, title, body, to) = match outcome {
+                    land::Outcome::Landed {
+                        agent_ref,
+                        tip,
+                        tasks,
+                        seconds,
+                    } => {
+                        println!(
+                            "landed {} from {agent_ref} (gates {seconds:.1} s)",
+                            &tip[..12]
+                        );
+                        let mut body = format!(
+                            "mode=landed source={tip} main={tip}\nGates: {seconds:.1} s on {}",
+                            agent::host()
+                        );
+                        if !tasks.is_empty() {
+                            body.push_str(&format!("\nTasks: {}", tasks.join(", ")));
+                        }
+                        (
+                            "landed",
+                            format!("Landed {} from {agent_ref}", &tip[..12]),
+                            body,
+                            None,
+                        )
+                    }
+                    land::Outcome::Failed {
+                        agent_ref,
+                        tip,
+                        failed,
+                        seconds,
+                    } => {
+                        let names: Vec<&str> = failed.iter().map(|(n, _)| n.as_str()).collect();
+                        println!(
+                            "not landed {} from {agent_ref}: {} failed ({seconds:.1} s)",
+                            &tip[..12],
+                            names.join(", ")
+                        );
+                        let mut body = format!(
+                            "The gates failed on {}: fix it, run `susi-tools gates`, ship again.\n",
+                            agent::host()
+                        );
+                        for (name, tail) in failed {
+                            let tail: String = tail
+                                .chars()
+                                .rev()
+                                .take(1200)
+                                .collect::<Vec<_>>()
+                                .into_iter()
+                                .rev()
+                                .collect();
+                            body.push_str(&format!("\n== {name}\n{tail}\n"));
+                        }
+                        (
+                            "answer",
+                            format!(
+                                "Not landed: {} from {agent_ref}, {} failed",
+                                &tip[..12],
+                                names.join(", ")
+                            ),
+                            body,
+                            Some(to_agent),
+                        )
+                    }
+                    land::Outcome::Behind {
+                        agent_ref,
+                        tip,
+                        main,
+                    } => {
+                        println!("not landed {} from {agent_ref}: main moved on", &tip[..12]);
+                        (
+                            "answer",
+                            format!("Not landed: main moved past {} from {agent_ref}", &tip[..12]),
+                            format!(
+                                "main is now {main}: merge it into your work (`git merge origin/main`), run the gates, ship again."
+                            ),
+                            Some(to_agent),
+                        )
+                    }
+                };
+                post_line(
+                    &board,
+                    REMOTE,
+                    &board::Post {
+                        kind,
+                        agent: &agent,
+                        title: &title,
+                        body: &body,
+                        to: to.as_deref(),
+                        re: None,
+                        task: None,
+                    },
+                )?;
+            }
+            Ok(())
         }
         ["speed", ..] => {
             let o = parse(args.get(1..).unwrap_or(&[]), &["--cold", "--json"])?;

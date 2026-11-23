@@ -79,6 +79,18 @@ Board, tasks and claims); the rules below are this repository's own.
     the line (8.0 s on Susi, 2026-11-24; 17.7 s one after another). `--cold`
     also times a build after `cargo clean` in a throwaway target directory,
     reported apart. Replaces the retired `scripts/speed-report.ps1`.
+  - **Landing:** a clone set with `git config susi.land host` (a cloud
+    agent's, whose machine is too small for the gates inside the 10-second
+    line: 4 cores took 37.6 s for Susi's, a company host 6.6 s) ships to
+    `refs/agents/<agent>` instead of `main`, posts a request on the Board, and
+    may claim the task its own unlanded work records. `land [--target
+    <triple>]...`, run on a company host in a clone of its own (a timer may
+    start it every minute; one run at a time), checks out each agent ref
+    ahead of `main` in its own worktree, runs `gates` there, pushes what
+    passes as `main` (a fast-forward, through the clone's hooks) and says so
+    on the Board; work whose gates fail, or that `main` has moved past, stays
+    where it is and its agent is told on the Board, once a commit (the CEO,
+    2026-11-24: "Company host lands it").
   - **Gates:** `gates [--target <triple>]...` runs every gate before a ship in
     three lanes at once: the whole suite; the suite of the packages that have
     features, with `--no-default-features`, in its own target folder

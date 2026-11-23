@@ -202,6 +202,12 @@ pub fn claim(repo: &Repo, remote: &str, req: &Request<'_>) -> Result<Claim, Stri
         }
         _ => own,
     };
+    // A clone that ships for landing claims the task its own work records before it lands.
+    let open = if !open.iter().any(|t| t.id == req.task) && crate::ship::landing_mode(repo) {
+        tasks::open_records(repo, "HEAD")?
+    } else {
+        open
+    };
     let task = open.iter().find(|t| t.id == req.task).ok_or_else(|| {
         format!(
             "{} is not an open task on {remote}'s main, nor in Susi's queue",

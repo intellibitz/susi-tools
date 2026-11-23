@@ -1132,3 +1132,172 @@ fn a_ship_never_shortens_a_longer_lease() {
         "the ship's one-hour renewal shortened a three-hour lease"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Landing (T-CLAUDE-9; the CEO, 2026-11-24: "Company host lands it"): a cloud agent's clone ships
+// to refs/agents/<agent>, and a company host gates it and fast-forwards main.
+
+/// The newest Board item's text.
+fn last_item(fx: &Fx) -> String {
+    let refs = fx.git(
+        &fx.origin(),
+        &["for-each-ref", "--format=%(refname)", "refs/board/items/"],
+    );
+    let n = refs
+        .lines()
+        .filter_map(|r| r.rsplit('/').next()?.parse::<u64>().ok())
+        .max()
+        .unwrap();
+    fx.origin_blob(&format!("refs/board/items/{n}"))
+}
+
+/// A one-crate Cargo checkout in `agent`'s clone, its test passing or not, committed for `task`.
+fn commit_crate(fx: &Fx, agent: &str, passing: bool, task: &str) {
+    let dir = fx.clone_of(agent);
+    std::fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"land-probe\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    let want = if passing { 2 } else { 3 };
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        format!("#[test]\nfn adds() {{\n    assert_eq!(1 + 1, {want});\n}}\n"),
+    )
+    .unwrap();
+    std::fs::write(dir.join(".gitignore"), "/target\n").unwrap();
+    let lock = Command::new("cargo")
+        .args(["generate-lockfile", "--offline"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert!(
+        lock.status.success(),
+        "{}",
+        String::from_utf8_lossy(&lock.stderr)
+    );
+    fx.git(&dir, &["add", "-A"]);
+    fx.git(
+        &dir,
+        &[
+            "commit",
+            "-q",
+            "-m",
+            &format!("feat: a crate\n\nTask: {task}"),
+        ],
+    );
+}
+
+/// `susi-tools land` in `agent`'s clone, building in a target folder of the fixture's own.
+fn land(fx: &Fx, agent: &str) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_susi-tools"))
+        .current_dir(fx.clone_of(agent))
+        .env("GIT_CONFIG_GLOBAL", fx.root.join("gitconfig"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("SUSI_AGENT", agent)
+        .env("COMPUTERNAME", "test-host")
+        .env("CARGO_TARGET_DIR", fx.root.join("land-target"))
+        .args(["land"])
+        .output()
+        .unwrap();
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{said}");
+    said
+}
+
+#[test]
+fn a_clone_that_ships_for_landing_pushes_to_its_agent_ref_and_claims_its_own_record() {
+    let fx = Fx::new("forlanding");
+    let alpha = fx.clone_of("alpha");
+    fx.git(&alpha, &["config", "susi.land", "host"]);
+    let main = fx.origin_ref("refs/heads/main");
+    let out = fx.ok(
+        "alpha",
+        &[
+            "tasks",
+            "start",
+            "Cloud work",
+            "--accept",
+            "cargo --version",
+            "--scope",
+            "src",
+        ],
+    );
+    assert!(
+        out.contains("for a company host to gate and land") && out.contains("claimed"),
+        "{out}"
+    );
+    assert_eq!(
+        fx.origin_ref("refs/heads/main"),
+        main,
+        "main is the host's to move"
+    );
+    assert_eq!(
+        fx.origin_ref("refs/agents/alpha"),
+        Some(fx.git(&alpha, &["rev-parse", "HEAD"]))
+    );
+}
+
+#[test]
+fn a_host_lands_what_passes_its_gates_and_tells_once_what_does_not() {
+    let fx = Fx::new("land");
+    let alpha = fx.clone_of("alpha");
+    fx.git(&alpha, &["config", "susi.land", "host"]);
+    commit_crate(&fx, "alpha", true, "T-A-1");
+    let shipped = fx.ok("alpha", &["ship"]);
+    assert!(shipped.contains("refs/agents/alpha"), "{shipped}");
+    assert!(last_item(&fx).contains("\"kind\": \"request\""));
+
+    let said = land(&fx, "beta");
+    assert!(
+        said.contains("landed") && said.contains("refs/agents/alpha"),
+        "{said}"
+    );
+    let tip = fx.git(&alpha, &["rev-parse", "HEAD"]);
+    assert_eq!(fx.origin_ref("refs/heads/main"), Some(tip));
+    let item = last_item(&fx);
+    assert!(
+        item.contains("\"kind\": \"landed\"") && item.contains("from refs/agents/alpha"),
+        "{item}"
+    );
+    assert!(land(&fx, "beta").contains("nothing to land"));
+
+    // A failing test: not landed, the agent told once, main where it was.
+    let main = fx.origin_ref("refs/heads/main");
+    commit_crate(&fx, "alpha", false, "T-A-1");
+    fx.ok("alpha", &["ship"]);
+    let said = land(&fx, "beta");
+    assert!(
+        said.contains("not landed") && said.contains("tests"),
+        "{said}"
+    );
+    assert_eq!(fx.origin_ref("refs/heads/main"), main);
+    let item = last_item(&fx);
+    assert!(
+        item.contains("\"kind\": \"answer\"") && item.contains("\"to\": \"alpha\""),
+        "{item}"
+    );
+    assert!(land(&fx, "beta").contains("nothing to land"), "told once");
+}
+
+#[test]
+fn a_host_does_not_land_work_that_main_has_moved_past() {
+    let fx = Fx::new("landbehind");
+    let alpha = fx.clone_of("alpha");
+    fx.git(&alpha, &["config", "susi.land", "host"]);
+    commit_work(&fx, "alpha", "src/a.rs", "T-A-1");
+    fx.ok("alpha", &["ship"]);
+    // Meanwhile beta ships to main straight.
+    commit_work(&fx, "beta", "src/b.rs", "T-A-3");
+    fx.ok("beta", &["ship"]);
+    let main = fx.origin_ref("refs/heads/main");
+    let said = land(&fx, "beta");
+    assert!(said.contains("main moved on"), "{said}");
+    assert_eq!(fx.origin_ref("refs/heads/main"), main);
+    assert!(last_item(&fx).contains("Not landed: main moved past"));
+}
