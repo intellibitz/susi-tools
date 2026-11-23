@@ -33,8 +33,9 @@ repository kept a copy.
   `gitlab.com/intellibitz/susi-core`) and Susi Tools
   (`github.com/intellibitz/susi-tools`, `gitlab.com/intellibitz/susi-tools`).
   Every ship pushes them in the background; nothing is fetched from them.
-  Public copies carry `main` and release tags only, and every push of a public
-  repository passes the firewall Susi keeps.
+  Public copies carry `main` (pushed by every ship) and signed release tags
+  (published by hand) only, and every push of a public repository passes the
+  firewall Susi keeps.
 - **Published one way.** No outside pull request, patch or commit is merged.
   Anyone may fork the public repositories under Apache-2.0, which grants rights
   to the code, not to the Susi name or marks.

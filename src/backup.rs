@@ -20,8 +20,10 @@ const CARRIED: [&str; 5] = [
     "refs/abandoned/*:refs/abandoned/*",
 ];
 
-/// What a public repository's backups carry: its public face, `main` and release tags only.
-const CARRIED_PUBLIC: [&str; 1] = ["refs/tags/*:refs/tags/*"];
+/// What a public repository's backups carry besides `main`: nothing. Its contract publishes only
+/// `main` and signed release tags, never an unsigned one, and a signed tag is published by hand;
+/// a clone also holds old snapshot tags that are no release, which the push guard refuses.
+const CARRIED_PUBLIC: [&str; 0] = [];
 
 /// What `repo`'s backups carry besides `main`.
 fn carried(public: bool) -> &'static [&'static str] {
@@ -120,8 +122,11 @@ pub fn push(repo: &Repo, remote: &str, head: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn a_public_backup_carries_main_and_release_tags_only() {
-        assert_eq!(super::carried(true), ["refs/tags/*:refs/tags/*"]);
+    fn a_public_backup_carries_main_only() {
+        assert!(
+            super::carried(true).is_empty(),
+            "a public backup carries main only"
+        );
         assert!(super::carried(false).contains(&"refs/board/*:refs/board/*"));
         assert!(super::carried(false)
             .iter()

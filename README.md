@@ -62,7 +62,8 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     Susi Tools) is pushed only through its firewall: the pre-push guard runs
     the script Susi keeps, named by `git config susi.publicFirewall <path>`, on
     every push, as a server's pre-receive would, and refuses the push when none
-    is named; its backups carry `main` and release tags only.
+    is named; its backups carry `main` only (a signed release tag is published by
+    hand: the public copies never receive an unsigned one).
     `tasks finish` does close and ship in one
     command. The separate `tasks add` and `tasks renew` left on 2026-11-23:
     nothing called them (`tasks start` adds, a ship renews), and so did the
@@ -176,7 +177,7 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
 Each piece is checked against the rules above before it lands.
 This repository is public since 2026-11-22: its write-only backups are at
 `github.com/intellibitz/susi-tools` and `gitlab.com/intellibitz/susi-tools`,
-`main` and release tags only. The repository of record is a private Cloudflare
+`main` and signed release tags only. The repository of record is a private Cloudflare
 Artifacts repository (since 2026-11-23); nothing is fetched from the hosted
 copies, every ship pushes them in the background, and no
 outside pull request, patch or commit is merged. Anyone may fork it under
