@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod agent;
+mod backup;
 mod board;
 mod check;
 mod claims;
@@ -19,7 +20,7 @@ mod ship;
 mod tasks;
 mod time;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "\
@@ -516,9 +517,20 @@ fn run(args: &[String]) -> Result<(), Failure> {
                             task: shipped.first().map(String::as_str),
                         },
                     )?;
+                    if backup::spawn(&repo, remote, &to) {
+                        println!(
+                            "backing up to {} in the background (.git/susi-backup.log)",
+                            backup::urls(&repo).join(", ")
+                        );
+                    }
                     after_ship(&repo, remote, &board, &agent)
                 }
             }
+        }
+        // The detached half of `ship`'s backups (`backup::spawn`); not for agents to type.
+        ["backup-push", remote, head] => {
+            let repo = git::Repo::open(Path::new("."))?;
+            backup::push(&repo, remote, head).map_err(Failure::Run)
         }
         ["hook", ..] => githook::run_cli(&words[1..]).map_err(|stop| match stop {
             hooks::Stop::Usage(m) => Failure::Usage(m),

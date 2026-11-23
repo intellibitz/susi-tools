@@ -726,6 +726,57 @@ fn ship_fast_forwards_main_posts_landed_and_renews_the_claim() {
 }
 
 #[test]
+fn ship_keeps_each_backup_current_in_the_background() {
+    let fx = Fx::new("backup");
+    let alpha = fx.clone_of("alpha");
+    let backup = fx.root.join("backup.git");
+    fx.git(
+        &fx.root,
+        &["init", "-q", "--template=", "--bare", "backup.git"],
+    );
+    fx.git(
+        &alpha,
+        &["config", "--add", "susi.backup", backup.to_str().unwrap()],
+    );
+    fx.ok("alpha", &["tasks", "claim", "T-A-1", "--scope", "src"]);
+    commit_work(&fx, "alpha", "src/lib.rs", "T-A-1");
+    let out = fx.ok("alpha", &["ship"]);
+    assert!(out.contains("backing up to"), "{out}");
+    let head = fx.git(&alpha, &["rev-parse", "HEAD"]);
+    // The push is detached: the ship has returned; the backup catches up on its own.
+    let mut caught_up = false;
+    for _ in 0..100 {
+        let main = fx.try_git(
+            &backup,
+            &["rev-parse", "--verify", "--quiet", "refs/heads/main"],
+        );
+        let landed = fx.try_git(
+            &backup,
+            &["rev-parse", "--verify", "--quiet", "refs/board/items/2"],
+        );
+        if main.as_deref() == Some(head.as_str()) && landed.is_some() {
+            caught_up = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let log = std::fs::read_to_string(alpha.join(".git/susi-backup.log")).unwrap_or_default();
+    assert!(
+        caught_up,
+        "the backup has main and the Board's landed item: {log}"
+    );
+    assert!(log.contains("current"), "{log}");
+    assert!(
+        fx.try_git(
+            &backup,
+            &["rev-parse", "--verify", "--quiet", "refs/claims/T-A-1"]
+        )
+        .is_none(),
+        "claims are leases and never copied"
+    );
+}
+
+#[test]
 fn shipping_a_close_releases_its_claim() {
     let fx = Fx::new("shipclose");
     fx.ok("alpha", &["tasks", "claim", "T-A-1", "--scope", "src"]);

@@ -53,7 +53,12 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     `tasks close` (runs the acceptance and, only if it passes, commits the
     record's removal) and `ship` (committed work only, a fast-forward of
     `main`, then Landed on the Board; renews your claim, or releases it when
-    the ship closed its task). `tasks finish` does close and ship in one
+    the ship closed its task). A clone that names backups (`git config --add
+    susi.backup <url>`, once per backup) has each ship start a detached push of
+    `main`, release tags, agents' published work, the Board and the finished
+    task records to every one of them, never forced and never claims; the ship
+    does not wait for it, and each outcome is a line of `.git/susi-backup.log`.
+    `tasks finish` does close and ship in one
     command. The separate `tasks add` and `tasks renew` left on 2026-11-23:
     nothing called them (`tasks start` adds, a ship renews), and so did the
     earlier program's spellings `workflow board …` and `workflow ship`. A task of
