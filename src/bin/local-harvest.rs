@@ -12,10 +12,9 @@ mod git_program;
 #[path = "../harvest.rs"]
 mod harvest;
 #[path = "../json.rs"]
-#[allow(dead_code)]
+#[allow(dead_code)] // The audit reads JSON; the writing half serves susi-tools.
 mod json;
 #[path = "../sha256.rs"]
-#[allow(dead_code)]
 mod sha256;
 
 use std::path::PathBuf;
