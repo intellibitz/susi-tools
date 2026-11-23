@@ -157,13 +157,21 @@ pub fn root_refusal(foreign: Option<&(Root, String)>) -> Option<String> {
     ))
 }
 
+/// The user's home folder: `HOME`, else `USERPROFILE`, which is all Windows sets unless a
+/// Unix-style shell adds `HOME`. An empty value counts as unset.
+pub fn user_home() -> Option<PathBuf> {
+    ["HOME", "USERPROFILE"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .find(|home| !home.is_empty())
+        .map(PathBuf::from)
+}
+
 /// `~/susi-agents/<agent>`.
 fn default_root(agent: &str) -> Result<PathBuf, Stop> {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .filter(|h| !h.is_empty())
-        .ok_or_else(|| Stop::Usage("no HOME: name the folder".into()))?;
-    Ok(PathBuf::from(home).join("susi-agents").join(agent))
+    let home =
+        user_home().ok_or_else(|| Stop::Usage("no HOME or USERPROFILE: name the folder".into()))?;
+    Ok(home.join("susi-agents").join(agent))
 }
 
 /// Mark `dir` (made if missing) as the root of `agent`. Marking it again for the same agent

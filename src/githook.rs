@@ -547,10 +547,7 @@ fn isolation(repo: &Repo) -> Result<(), Stop> {
 
 /// The homes every un-isolated instance shares: `~/.susi` and the per-user config folder.
 fn default_homes() -> Vec<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from);
+    let home = hooks::user_home();
     let mut homes = Vec::new();
     if let Some(home) = &home {
         homes.push(home.join(".susi"));
