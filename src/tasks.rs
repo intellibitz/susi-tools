@@ -6,7 +6,6 @@ use crate::git::Repo;
 use crate::json::{self, Json};
 
 pub const TASKS_DIR: &str = ".agents/tasks/";
-pub const CLAIMS: &str = "refs/claims/";
 pub const MAIN_SNAPSHOT: &str = "refs/susi-tools/remote/main";
 
 pub struct OpenTask {
@@ -82,15 +81,10 @@ pub fn open_records(repo: &Repo, at: &str) -> Result<Vec<OpenTask>, String> {
     Ok(open)
 }
 
-/// Claims as this repository last saw them: its own `refs/claims/*` (a bare canonical
-/// repository) or, in a clone, the copy this program fetched.
+/// The remote's claims as this program's last fetch (`fetch_main`) brought them.
 fn claims(repo: &Repo) -> Result<Vec<(String, Json)>, String> {
-    let mut refs = repo.refs(CLAIMS)?;
-    let mut prefix = CLAIMS;
-    if refs.is_empty() {
-        refs = repo.refs("refs/susi-tools/remote/claims/")?;
-        prefix = "refs/susi-tools/remote/claims/";
-    }
+    let prefix = "refs/susi-tools/remote/claims/";
+    let refs = repo.refs(prefix)?;
     let oids: Vec<String> = refs.iter().map(|(_, oid)| oid.clone()).collect();
     let blobs = repo.blobs(&oids)?;
     let mut out = Vec::new();

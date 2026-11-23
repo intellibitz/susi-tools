@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The read-only slice against made-up repositories: no real Board item or task record is used
-//! (Susi Tools is public; the real Board is private).
+//! The read-only slice against made-up repositories: a bare `origin` that holds the Board, the
+//! claims and main, and a clone of it that says it is Susi. No real Board item or task record is
+//! used (Susi Tools is public; the real Board is private).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -61,6 +62,8 @@ impl Fixture {
             &fx.work(),
             &["remote", "add", "origin", bare.to_str().unwrap()],
         );
+        // The Board is read from Susi's origin: this clone stands for Susi.
+        std::fs::write(fx.work().join(".susi-repo-role"), "private-commercial\n").unwrap();
         fx
     }
 
@@ -169,12 +172,12 @@ fn the_board_shows_its_newest_items_oldest_first() {
     for n in 1..=12 {
         fx.board_item(n, "heads-up", &format!("item number {n}"));
     }
-    let bare = fx.bare();
+    let work = fx.work();
     let (code, out, err) = fx.run(&[
         "board",
         "list",
         "--repo",
-        bare.to_str().unwrap(),
+        work.to_str().unwrap(),
         "--limit",
         "3",
     ]);
@@ -192,26 +195,19 @@ fn the_board_shows_its_newest_items_oldest_first() {
 }
 
 #[test]
-fn the_board_as_json_carries_each_number_object_and_item() {
-    let fx = Fixture::new("boardjson");
-    fx.board_item(1, "landed", "first");
-    let bare = fx.bare();
-    let (code, out, err) = fx.run(&["board", "list", "--repo", bare.to_str().unwrap(), "--json"]);
-    assert_eq!(code, 0, "{err}");
-    assert!(out.contains("\"n\": 1"), "{out}");
-    assert!(out.contains("\"sha\": \""), "{out}");
-    assert!(out.contains("\"schema\": \"susi-board-item-v1\""), "{out}");
-}
-
-#[test]
-fn an_item_of_another_schema_is_refused_not_shown() {
+fn an_item_of_another_schema_is_not_shown() {
     let fx = Fixture::new("schema");
-    let oid = fx.blob(r#"{"schema":"something-else","n":1}"#);
+    let oid = fx.blob(r#"{"schema":"something-else","n":1,"title":"stranger"}"#);
     fx.git(&fx.bare(), &["update-ref", "refs/board/items/1", &oid]);
-    let bare = fx.bare();
-    let (code, _, err) = fx.run(&["board", "list", "--repo", bare.to_str().unwrap()]);
-    assert_eq!(code, 1);
-    assert!(err.contains("not susi-board-item-v1"), "{err}");
+    fx.board_item(2, "note", "a board item");
+    let work = fx.work();
+    let (code, out, err) = fx.run(&["board", "list", "--repo", work.to_str().unwrap()]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("1 item(s) shown, last is 2"), "{out}");
+    assert!(
+        out.contains("a board item") && !out.contains("stranger"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -297,6 +293,7 @@ fn reading_writes_nothing_in_the_checkout() {
     fx.publish();
     fx.board_item(1, "landed", "first");
     let work = fx.work();
+    // The Board's objects are here already, so the reads' fetches add only refs of their own.
     fx.git(
         &work,
         &[
@@ -310,7 +307,7 @@ fn reading_writes_nothing_in_the_checkout() {
     for args in [
         vec!["board", "list", "--repo", work.to_str().unwrap()],
         vec!["tasks", "list", "--repo", work.to_str().unwrap()],
-        vec!["board", "list", "--repo", work.to_str().unwrap(), "--json"],
+        vec!["tasks", "list", "--repo", work.to_str().unwrap(), "--json"],
     ] {
         let (code, _, err) = fx.run(&args);
         assert_eq!(code, 0, "{args:?}: {err}");

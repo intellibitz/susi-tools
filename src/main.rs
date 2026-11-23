@@ -26,7 +26,7 @@ const USAGE: &str = "\
 susi-tools 0.2: the Susi AI OS development program
 
 The Board
-  susi-tools board list [--limit <n>] [--json]
+  susi-tools board list [--limit <n>]
   susi-tools board check
   susi-tools board post --kind <kind> --title <one line> [--body <text>]
                         [--to <agent|all>] [--re <n>] [--task <id>]
@@ -56,9 +56,8 @@ The earlier program's spellings work too: workflow board list|post|check, workfl
 Any other command goes to the earlier program, installed beside this one as susi-tools-legacy.
 
 Every command also takes:
-  --repo <path>    the repository: a checkout or worktree, or (for board list) a bare
-                   repository (default: the current directory); its origin holds main and
-                   the claims
+  --repo <path>    the checkout or worktree (default: the current directory); its origin
+                   holds main and the claims
   --agent <name>   who you are (default: $SUSI_AGENT, else git config susi.agent)
 
 What each writes: board post creates one numbered item; claim and release change your claim
@@ -171,7 +170,7 @@ impl Options {
 
     /// The repository that holds the Board (Susi's), for work in `repo`.
     fn board(&self, repo: &git::Repo) -> Result<git::Repo, Failure> {
-        Ok(home::board_repo(repo, &self.path())?)
+        Ok(home::board_repo(repo)?)
     }
 
     fn repo(&self) -> Result<git::Repo, Failure> {
@@ -266,21 +265,13 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         ["board", "list", ..] => {
-            let o = parse(rest, &["--limit", "--json"])?;
+            let o = parse(rest, &["--limit"])?;
             let repo = o.repo()?;
             let limit = o.limit.unwrap_or(20);
-            let (items, last) = if o.repo.is_some() {
-                board::latest(&repo, limit)?
-            } else {
-                check::recent_items(&o.board(&repo)?, REMOTE, limit)?
-            };
-            if o.json {
-                println!("{}", board::to_json(&items).to_pretty());
-            } else {
-                println!("board: {} item(s) shown, last is {last}", items.len());
-                for item in &items {
-                    println!("{}", board::line(item));
-                }
+            let (items, last) = check::recent_items(&o.board(&repo)?, REMOTE, limit)?;
+            println!("board: {} item(s) shown, last is {last}", items.len());
+            for item in &items {
+                println!("{}", board::line(item));
             }
             Ok(())
         }

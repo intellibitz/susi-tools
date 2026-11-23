@@ -4,7 +4,7 @@
 //! them. Claims stay in each repository's own `origin`; Board items always go to Susi's.
 
 use crate::git::Repo;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// The role a checkout declares in its `.susi-repo-role` file, if any.
 fn role(dir: &Path) -> Option<String> {
@@ -13,29 +13,16 @@ fn role(dir: &Path) -> Option<String> {
         .map(|s| s.trim().to_owned())
 }
 
-/// The repository that holds the Board, for work done in `current`:
-/// 1. `current` itself, when it is Susi (`.susi-repo-role`: `private-commercial`) or a bare
-///    repository that holds Board items;
+/// The repository that holds the Board, for work done in the checkout `current`:
+/// 1. `current` itself, when it is Susi (`.susi-repo-role`: `private-commercial`);
 /// 2. the `susi-commercial-apps` clone in the agent root that contains `current` (the directory
 ///    with a `.susi-agent-root` file).
-pub fn board_repo(current: &Repo, current_path: &Path) -> Result<Repo, String> {
-    match current.work_tree() {
-        Ok(work) => {
-            if role(work).as_deref() == Some("private-commercial") {
-                return Repo::open(work);
-            }
-        }
-        Err(_) => {
-            if !current.refs(crate::board::ITEMS)?.is_empty() {
-                return Repo::open(current_path);
-            }
-        }
+pub fn board_repo(current: &Repo) -> Result<Repo, String> {
+    let work = current.work_tree()?;
+    if role(work).as_deref() == Some("private-commercial") {
+        return Repo::open(work);
     }
-    let start: PathBuf = current
-        .work_tree()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|_| current_path.to_path_buf());
-    let start = start.canonicalize().unwrap_or(start);
+    let start = work.canonicalize().unwrap_or_else(|_| work.to_path_buf());
     for dir in start.ancestors() {
         if dir.join(".susi-agent-root").is_file() {
             let clone = dir.join("susi-commercial-apps");

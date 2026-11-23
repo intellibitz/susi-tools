@@ -319,10 +319,7 @@ fn posts_take_the_next_number_and_name_the_item_before() {
         raw.starts_with("{\n  \"schema\": \"susi-board-item-v1\","),
         "{raw}"
     );
-    let listed = fx.ok(
-        "alpha",
-        &["board", "list", "--repo", fx.origin().to_str().unwrap()],
-    );
+    let listed = fx.ok("alpha", &["board", "list"]);
     assert!(listed.contains("to alpha: re 1: two"), "{listed}");
     fx.refused(
         "alpha",

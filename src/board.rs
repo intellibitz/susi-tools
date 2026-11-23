@@ -3,7 +3,7 @@
 //! `refs/board/items/<n>` (schema `susi-board-item-v1`), each naming the item before it.
 
 use crate::git::{PushOutcome, Repo, Update};
-use crate::json::{self, Json};
+use crate::json::Json;
 
 pub const ITEMS: &str = "refs/board/items/";
 pub const SCHEMA: &str = "susi-board-item-v1";
@@ -15,7 +15,6 @@ pub const KINDS: [&str; 10] = [
 
 pub struct Item {
     pub n: u64,
-    pub oid: String,
     pub body: Json,
 }
 
@@ -30,35 +29,6 @@ fn numbered(pairs: Vec<(String, String)>) -> Vec<(u64, String)> {
         .collect();
     numbered.sort_by_key(|(n, _)| *n);
     numbered
-}
-
-/// The newest `limit` items, oldest first, the way the Board is read.
-pub fn latest(repo: &Repo, limit: usize) -> Result<(Vec<Item>, u64), String> {
-    let numbered = numbered(repo.refs(ITEMS)?);
-    let last = numbered.last().map_or(0, |(n, _)| *n);
-    let start = numbered.len().saturating_sub(limit);
-    let chosen = &numbered[start..];
-    let oids: Vec<String> = chosen.iter().map(|(_, oid)| oid.clone()).collect();
-    let blobs = repo.blobs(&oids)?;
-    let mut items = Vec::with_capacity(chosen.len());
-    for ((n, oid), blob) in chosen.iter().zip(blobs) {
-        let blob =
-            blob.ok_or_else(|| format!("board item {n} points at a missing object {oid}"))?;
-        let text = String::from_utf8(blob).map_err(|_| format!("board item {n} is not UTF-8"))?;
-        let body = json::parse(&text).map_err(|e| format!("board item {n} is not JSON: {e}"))?;
-        if body.text("schema") != SCHEMA {
-            return Err(format!(
-                "board item {n} has schema {:?}, not {SCHEMA}",
-                body.text("schema")
-            ));
-        }
-        items.push(Item {
-            n: *n,
-            oid: oid.clone(),
-            body,
-        });
-    }
-    Ok((items, last))
 }
 
 /// One line per item: number, UTC date and time, kind, agent, and the title, with the addressee
@@ -87,25 +57,6 @@ pub fn line(item: &Item) -> String {
         item.body.text("agent"),
         title
     )
-}
-
-/// The same shape the earlier tool printed for `board list --json`: `{"items":[{"item":…,"n":…,"sha":…}]}`.
-pub fn to_json(items: &[Item]) -> Json {
-    Json::Object(vec![(
-        "items".into(),
-        Json::Array(
-            items
-                .iter()
-                .map(|item| {
-                    Json::Object(vec![
-                        ("item".into(), item.body.clone()),
-                        ("n".into(), Json::Number(item.n.to_string())),
-                        ("sha".into(), Json::Str(item.oid.clone())),
-                    ])
-                })
-                .collect(),
-        ),
-    )])
 }
 
 pub struct Post<'a> {

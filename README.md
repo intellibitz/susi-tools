@@ -105,7 +105,7 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     items with no findings, and both refused a second claim by one agent.
     Timings there: `workflow check` 1.35 s (earlier program 16.5 s), a claim
     with its Board item 3 s, a ship 3 s.
-  - **Tests:** 66, on made-up repositories and records only, run on Linux before every ship:
+  - **Tests:** 65, on made-up repositories and records only, run on Linux before every ship:
     0.5 s for the tests on the laptop's CachyOS system (`cargo nextest run`, warm, 2026-11-23);
     from Windows through WSL2 (`scripts/linux-suite.ps1` below) about 2.5 s for the tests, 4.5
     to 4.8 s for the whole run with nothing changed and 7.4 to 9.0 s after a one-file edit

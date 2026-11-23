@@ -9,7 +9,8 @@ use crate::git::Repo;
 const BOARD_SNAPSHOT: &str = "refs/susi-tools/remote/board/";
 const LOOK_BACK: usize = 60;
 
-/// The newest `LOOK_BACK` items of the remote's Board, oldest first, fetched by name only.
+/// The newest `limit` items of the remote's Board, oldest first, fetched by name only. An item
+/// that is not a Board item (not JSON, or of another schema) is not shown.
 pub fn recent_items(
     repo: &Repo,
     remote: &str,
@@ -44,18 +45,15 @@ pub fn recent_items(
     let oids: Vec<String> = chosen.iter().map(|(_, oid)| oid.clone()).collect();
     let blobs = repo.blobs(&oids)?;
     let mut items = Vec::new();
-    for ((n, oid), blob) in chosen.iter().zip(blobs) {
+    for ((n, _), blob) in chosen.iter().zip(blobs) {
         let Some(body) = blob
             .and_then(|b| String::from_utf8(b).ok())
             .and_then(|t| crate::json::parse(&t).ok())
+            .filter(|body| body.text("schema") == board::SCHEMA)
         else {
             continue;
         };
-        items.push(board::Item {
-            n: *n,
-            oid: oid.clone(),
-            body,
-        });
+        items.push(board::Item { n: *n, body });
     }
     Ok((items, last))
 }
