@@ -56,8 +56,9 @@ The earlier program's spellings work too: workflow board list|post|check, workfl
 Any other command goes to the earlier program, installed beside this one as susi-tools-legacy.
 
 Every command also takes:
-  --repo <path>    the repository: a checkout or worktree, or (for list) a bare repository
-                   (default: the current directory); its origin holds main and the claims
+  --repo <path>    the repository: a checkout or worktree, or (for board list) a bare
+                   repository (default: the current directory); its origin holds main and
+                   the claims
   --agent <name>   who you are (default: $SUSI_AGENT, else git config susi.agent)
 
 What each writes: board post creates one numbered item; claim and release change your claim
@@ -329,12 +330,13 @@ fn run(args: &[String]) -> Result<(), Failure> {
         ["tasks", "list", ..] => {
             let o = parse(rest, &["--json"])?;
             let repo = o.repo()?;
-            let reference = "main";
-            let open = tasks::open(&repo, reference, time::now_unix())?;
+            // The remote's main and claims as they are now, not the checkout's own main.
+            let main = tasks::fetch_main(&repo, REMOTE)?;
+            let open = tasks::open(&repo, &main, time::now_unix())?;
             if o.json {
                 println!("{}", tasks::to_json(&open).to_pretty());
             } else {
-                println!("{} open task(s) at {reference}", open.len());
+                println!("{} open task(s) at {REMOTE}'s main", open.len());
                 for t in &open {
                     let holder = match (&t.claim, t.live) {
                         (Some(c), true) => format!("claimed by {}", c.text("agent")),

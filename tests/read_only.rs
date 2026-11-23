@@ -56,6 +56,11 @@ impl Fixture {
             &fx.root,
             &["init", "-q", "--template=", "-b", "main", "work"],
         );
+        let bare = fx.bare();
+        fx.git(
+            &fx.work(),
+            &["remote", "add", "origin", bare.to_str().unwrap()],
+        );
         fx
     }
 
@@ -225,11 +230,14 @@ fn open_tasks_show_live_and_lapsed_claims_and_skip_finished_records() {
     fx.publish();
     fx.claim("T-A-2", "ALPHA", now() + 3600);
     fx.claim("T-A-3", "BETA", now() - 60);
-    let bare = fx.bare();
-    let (code, out, err) = fx.run(&["tasks", "list", "--repo", bare.to_str().unwrap()]);
+    let work = fx.work();
+    let (code, out, err) = fx.run(&["tasks", "list", "--repo", work.to_str().unwrap()]);
     assert_eq!(code, 0, "{err}");
     let lines: Vec<&str> = out.lines().collect();
-    assert!(lines[0].starts_with("3 open task(s) at main"), "{out}");
+    assert!(
+        lines[0].starts_with("3 open task(s) at origin's main"),
+        "{out}"
+    );
     assert!(
         lines[1].contains("T-A-2") && lines[1].contains("claimed by ALPHA"),
         "{out}"
@@ -246,7 +254,7 @@ fn open_tasks_show_live_and_lapsed_claims_and_skip_finished_records() {
         !out.contains("finished"),
         "a finished record was listed: {out}"
     );
-    let (_, json, _) = fx.run(&["tasks", "list", "--repo", bare.to_str().unwrap(), "--json"]);
+    let (_, json, _) = fx.run(&["tasks", "list", "--repo", work.to_str().unwrap(), "--json"]);
     assert!(
         json.contains("\"claimed_by\": \"ALPHA\"")
             && json.contains("\"lapsed_claim_by\": \"BETA\""),
@@ -255,12 +263,21 @@ fn open_tasks_show_live_and_lapsed_claims_and_skip_finished_records() {
     assert!(json.contains("\"accept\": \"cargo test\""), "{json}");
 }
 
-/// Every file under `dir` with its size and modification time.
+/// Every file under `dir` with its size and modification time, except the program's own copy
+/// of the remote (`.git/refs/susi-tools`) and the `FETCH_HEAD` its fetch leaves: a read brings
+/// the remote's main, claims and Board into that copy and changes nothing else.
 fn snapshot(dir: &Path) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
+    let own = [
+        dir.join(".git/refs/susi-tools"),
+        dir.join(".git/FETCH_HEAD"),
+    ];
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(next) = stack.pop() {
         for entry in std::fs::read_dir(&next).unwrap().flatten() {
+            if own.contains(&entry.path()) {
+                continue;
+            }
             let meta = entry.metadata().unwrap();
             if meta.is_dir() {
                 stack.push(entry.path());
@@ -310,6 +327,6 @@ fn reading_writes_nothing_in_the_checkout() {
     assert_eq!(
         before,
         snapshot(&work),
-        "a read changed a file in the checkout or its .git"
+        "a read changed a file in the checkout or its .git outside its own refs"
     );
 }

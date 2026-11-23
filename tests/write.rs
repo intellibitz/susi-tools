@@ -443,13 +443,43 @@ fn another_agents_claim_or_scope_refuses_a_claim() {
         "overlaps src, claimed by ALPHA",
     );
     fx.ok("beta", &["tasks", "claim", "T-A-3", "--scope", "docs"]);
-    let (_, list, _) = fx.tool(
-        "alpha",
-        &["tasks", "list", "--repo", fx.origin().to_str().unwrap()],
-    );
+    let (_, list, _) = fx.tool("alpha", &["tasks", "list"]);
     assert!(
         list.contains("claimed by ALPHA") && list.contains("claimed by BETA"),
         "{list}"
+    );
+}
+
+#[test]
+fn tasks_list_reads_the_remotes_main_and_claims_not_a_stale_local_main() {
+    let fx = Fx::new("liststale");
+    let alpha = fx.clone_of("alpha");
+    let head = fx.git(&alpha, &["rev-parse", "HEAD"]);
+    // Beta records a new task, ships it and claims it; alpha's own main stays where it was.
+    let beta = fx.clone_of("beta");
+    std::fs::write(
+        beta.join(".agents/tasks/T-A-4.json"),
+        task_json("T-A-4", &[], &["cargo", "--version"]),
+    )
+    .unwrap();
+    fx.git(&beta, &["add", "-A"]);
+    fx.git(&beta, &["commit", "-q", "-m", "add T-A-4"]);
+    fx.ok("beta", &["ship"]);
+    fx.ok("beta", &["tasks", "claim", "T-A-4", "--scope", "docs"]);
+    let list = fx.ok("alpha", &["tasks", "list"]);
+    assert!(
+        list.starts_with("4 open task(s) at origin's main"),
+        "{list}"
+    );
+    assert!(
+        list.lines()
+            .any(|l| l.contains("T-A-4") && l.contains("claimed by BETA")),
+        "{list}"
+    );
+    assert_eq!(
+        fx.git(&alpha, &["rev-parse", "HEAD"]),
+        head,
+        "listing moved the checkout"
     );
 }
 
