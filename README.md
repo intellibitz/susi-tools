@@ -136,10 +136,10 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
   - **Installed since 2026-11-22**, in place of the earlier program, on the
     Windows development host (`~/.cargo/bin/susi-tools`). The earlier program
     stays installed beside it as `susi-tools-legacy`: any command this one does
-    not have yet (among them `workflow vision`, `workflow prune`,
-    `workflow start`, `harvest` other than `audit`) is handed to it, with a
-    one-line note. The Linux hosts have no earlier program: there, such a
-    command is unknown. The hand-off ends when no contract names a command it
+    not have yet (among them `workflow vision`, `workflow prune`, `workflow
+    start` and `harvest`, whose audit is `local-harvest audit` now) is handed
+    to it, with a one-line note. The Linux hosts have no earlier program:
+    there, such a command is unknown. The hand-off ends when no contract names a command it
     alone has.
   - Build it with `cargo build --release --offline`. Test it before every ship with
     `pwsh scripts/linux-suite.ps1 -Agent <you> -Lint` (from Windows, through WSL2), or

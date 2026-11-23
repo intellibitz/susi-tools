@@ -922,7 +922,7 @@ fn a_task_of_susis_queue_claims_files_in_another_repository_and_keeps_them_acros
             susi.to_str().unwrap(),
         ],
     );
-    // A repository with no queue of its own, as Susi Tools has none.
+    // A repository with no queue of its own: the task is Susi's.
     let tools_origin = fx.root.join("tools.git");
     fx.git(
         &fx.root,
