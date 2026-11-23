@@ -15,5 +15,10 @@
     ]
   },
   "created_by": "CLAUDE",
-  "created_unix": 1795460564
+  "created_unix": 1795460564,
+  "reuse": {
+    "decision": "existing",
+    "searched": "Susi Tools' own speed command (src/speed.rs: workspace inspection by cargo metadata, measured cargo and git runs, the touch guard) and Susi's gate list (its AGENTS.md, Working here, step 6); measured on Susi 2026-11-24: in sequence 14.3 s, side by side 6.6 s once the customer build has its own target folder and its suite runs only the packages whose features change",
+    "reason": "gates and the faster speed reuse speed's inspection and measuring; the only new thing is running three lanes at once with std threads; no dependency."
+  }
 }
