@@ -758,7 +758,79 @@ fn pre_push(repo: &Repo, records: &str) -> Result<(), Stop> {
         push_rule(repo, local, remote_ref, remote)
             .map_err(|why| Stop::Refused(format!("❌ pre-push: {why}")))?;
     }
+    if is_public(repo) {
+        public_firewall(repo, records)
+            .map_err(|why| Stop::Refused(format!("❌ pre-push: {why}")))?;
+    }
     Ok(())
+}
+
+/// Whether the checkout is one of the public repositories (`.susi-repo-role`: `public-…`).
+pub fn is_public(repo: &Repo) -> bool {
+    repo.work_tree()
+        .ok()
+        .and_then(crate::home::role)
+        .is_some_and(|role| role.starts_with("public-"))
+}
+
+/// A public repository (Susi Core, Susi Tools) is pushed only through its firewall, which keeps
+/// the private product out of it: the script Susi keeps, named by `git config
+/// susi.publicFirewall`, given the refs being pushed as a server's pre-receive reads them (`old
+/// new ref`), and run in this repository. This public program does not spell out what the
+/// firewall looks for. Until 2026-11-23 each public repository's own server ran it; their source
+/// of truth then moved to a host that runs no hooks, so every push runs it here, and a push with
+/// no firewall named is refused.
+fn public_firewall(repo: &Repo, records: &str) -> Result<(), String> {
+    let script = repo
+        .try_read(&["config", "--get", "susi.publicFirewall"])
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .ok_or("a public repository is pushed only through its firewall: name the one Susi keeps with `git config susi.publicFirewall <path>`")?;
+    let input: String = records
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            match fields[..] {
+                [_, local, remote_ref, remote] => Some(format!("{remote} {local} {remote_ref}\n")),
+                _ => None,
+            }
+        })
+        .collect();
+    let mut command = std::process::Command::new("sh");
+    command.arg(&script);
+    for (name, _) in std::env::vars_os() {
+        if name
+            .to_string_lossy()
+            .to_ascii_uppercase()
+            .starts_with("GIT_")
+        {
+            command.env_remove(&name);
+        }
+    }
+    command
+        .env("GIT_DIR", repo.git_dir())
+        .current_dir(repo.work_tree().unwrap_or_else(|_| repo.git_dir()))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("the firewall {script} did not run: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write as _;
+        let _ = stdin.write_all(input.as_bytes());
+    }
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("the firewall {script} did not finish: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the public firewall refused the push: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
 }
 
 fn object_type(repo: &Repo, oid: &str) -> String {

@@ -20,6 +20,18 @@ const CARRIED: [&str; 5] = [
     "refs/abandoned/*:refs/abandoned/*",
 ];
 
+/// What a public repository's backups carry: its public face, `main` and release tags only.
+const CARRIED_PUBLIC: [&str; 1] = ["refs/tags/*:refs/tags/*"];
+
+/// What `repo`'s backups carry besides `main`.
+fn carried(public: bool) -> &'static [&'static str] {
+    if public {
+        &CARRIED_PUBLIC
+    } else {
+        &CARRIED
+    }
+}
+
 /// The backup URLs this clone names.
 pub fn urls(repo: &Repo) -> Vec<String> {
     repo.try_read(&["config", "--get-all", "susi.backup"])
@@ -70,14 +82,15 @@ pub fn spawn(repo: &Repo, remote: &str, head: &str) -> bool {
 
 /// The detached half: the records from `remote`, then `head` and the records to each backup.
 pub fn push(repo: &Repo, remote: &str, head: &str) -> Result<(), String> {
+    let carried = carried(crate::githook::is_public(repo));
     let mut fetch = vec!["fetch", "--quiet", "--no-tags", remote];
-    fetch.extend(CARRIED);
+    fetch.extend(carried);
     let fetched = repo.read(&fetch);
     let main = format!("{head}:refs/heads/main");
     let mut failed = Vec::new();
     for url in urls(repo) {
         let mut args = vec!["push", "--quiet", url.as_str(), main.as_str()];
-        args.extend(CARRIED);
+        args.extend(carried);
         let outcome = repo.read(&args);
         println!(
             "{} backup {url}: {}",
@@ -101,5 +114,17 @@ pub fn push(repo: &Repo, remote: &str, head: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("backups not current: {}", failed.join(", ")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_public_backup_carries_main_and_release_tags_only() {
+        assert_eq!(super::carried(true), ["refs/tags/*:refs/tags/*"]);
+        assert!(super::carried(false).contains(&"refs/board/*:refs/board/*"));
+        assert!(super::carried(false)
+            .iter()
+            .all(|spec| !spec.contains("claims")));
     }
 }

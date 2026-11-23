@@ -7,7 +7,7 @@ use crate::git::Repo;
 use std::path::Path;
 
 /// The role a checkout declares in its `.susi-repo-role` file, if any.
-fn role(dir: &Path) -> Option<String> {
+pub fn role(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(".susi-repo-role"))
         .ok()
         .map(|s| s.trim().to_owned())

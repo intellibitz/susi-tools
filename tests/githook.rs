@@ -663,6 +663,71 @@ fn pre_push_lets_through_only_main_agent_refs_release_tags_and_records() {
 }
 
 #[test]
+fn a_public_repository_is_pushed_only_through_its_firewall() {
+    let fx = Fixture::new("firewall");
+    let work = fx.work();
+    let first = fx.git(&work, &["rev-parse", "HEAD"]);
+    fx.write(".susi-repo-role", "public-core\n");
+    fx.write("clean.txt", "nothing private\n");
+    fx.git(&work, &["add", "clean.txt"]);
+    fx.git(&work, &["commit", "-q", "-m", "clean"]);
+    let clean = fx.git(&work, &["rev-parse", "HEAD"]);
+    let push = |local: &str, remote: &str| {
+        let input = format!("refs/heads/main {local} refs/heads/main {remote}\n");
+        fx.hook(&work, &["pre-push", "origin"], &input, &[])
+    };
+
+    let unguarded = push(&clean, &first);
+    assert!(
+        !unguarded.status.success(),
+        "a public push with no firewall named passed"
+    );
+    assert!(
+        err(&unguarded).contains("pushed only through its firewall"),
+        "{}",
+        err(&unguarded)
+    );
+
+    // A stand-in for the firewall Susi keeps: it refuses a made-up mark and notes what it read.
+    let seen = fx.root.join("firewall-input.txt");
+    let script = fx.root.join("firewall.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nwhile read old new ref; do echo \"$old $new $ref\" >> '{}'; if git grep -q MADE-UP-TEST-MARK \"$new\" -- .; then echo \"REJECTED: test mark in $ref\" >&2; exit 1; fi; done\nexit 0\n",
+            seen.display()
+        ),
+    )
+    .unwrap();
+    fx.git(
+        &work,
+        &["config", "susi.publicFirewall", script.to_str().unwrap()],
+    );
+    let passed = push(&clean, &first);
+    assert!(passed.status.success(), "{}", err(&passed));
+    assert_eq!(
+        std::fs::read_to_string(&seen).unwrap().trim(),
+        format!("{first} {clean} refs/heads/main"),
+        "the firewall reads what a server's pre-receive reads"
+    );
+
+    fx.write("leak.txt", "MADE-UP-TEST-MARK\n");
+    fx.git(&work, &["add", "leak.txt"]);
+    fx.git(&work, &["commit", "-q", "-m", "leak"]);
+    let leak = fx.git(&work, &["rev-parse", "HEAD"]);
+    let refused = push(&leak, &clean);
+    assert!(
+        !refused.status.success(),
+        "the firewall's refusal was ignored"
+    );
+    assert!(
+        err(&refused).contains("test mark in refs/heads/main"),
+        "{}",
+        err(&refused)
+    );
+}
+
+#[test]
 fn post_checkout_lists_finished_worktrees_when_a_new_one_is_added() {
     let fx = Fixture::new("post-checkout");
     let work = fx.work();

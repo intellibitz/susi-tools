@@ -58,6 +58,11 @@ Founded on 2026-11-22 with a clean history. What it holds so far:
     `main`, release tags, agents' published work, the Board and the finished
     task records to every one of them, never forced and never claims; the ship
     does not wait for it, and each outcome is a line of `.git/susi-backup.log`.
+    A public repository (its `.susi-repo-role` says `public-…`: Susi Core,
+    Susi Tools) is pushed only through its firewall: the pre-push guard runs
+    the script Susi keeps, named by `git config susi.publicFirewall <path>`, on
+    every push, as a server's pre-receive would, and refuses the push when none
+    is named; its backups carry `main` and release tags only.
     `tasks finish` does close and ship in one
     command. The separate `tasks add` and `tasks renew` left on 2026-11-23:
     nothing called them (`tasks start` adds, a ship renews), and so did the
