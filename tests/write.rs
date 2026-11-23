@@ -559,6 +559,49 @@ fn release_frees_the_task_for_the_next_agent() {
 }
 
 #[test]
+fn a_number_hidden_behind_a_merge_is_still_used() {
+    // A task added and closed on main, then main merged into a branch that never had its record
+    // (as an agent's worktree branch merges main before shipping) and main moved to that merge:
+    // Git's default history simplification follows the merge's first parent, which never had the
+    // record, so a plain `git log -- <tasks>` misses the task and its number came back.
+    let fx = Fx::new("merge-hidden");
+    let alpha = fx.clone_of("alpha");
+    fx.git(&alpha, &["switch", "-q", "-c", "side"]);
+    std::fs::write(alpha.join("side.txt"), "side\n").unwrap();
+    fx.git(&alpha, &["add", "side.txt"]);
+    fx.git(&alpha, &["commit", "-q", "-m", "side work"]);
+    fx.git(&alpha, &["switch", "-q", "main"]);
+    std::fs::write(
+        alpha.join(".agents/tasks/T-ALPHA-7.json"),
+        task_json("T-ALPHA-7", &[], &["cargo", "test"]),
+    )
+    .unwrap();
+    fx.git(&alpha, &["add", "-A"]);
+    fx.git(&alpha, &["commit", "-q", "-m", "add 7"]);
+    fx.git(&alpha, &["rm", "-q", ".agents/tasks/T-ALPHA-7.json"]);
+    fx.git(&alpha, &["commit", "-q", "-m", "close 7"]);
+    fx.git(&alpha, &["switch", "-q", "side"]);
+    fx.git(&alpha, &["merge", "-q", "--no-edit", "main"]);
+    fx.git(&alpha, &["switch", "-q", "main"]);
+    fx.git(&alpha, &["merge", "-q", "--ff-only", "side"]);
+    let out = fx.ok(
+        "alpha",
+        &[
+            "tasks",
+            "start",
+            "After the merge",
+            "--accept",
+            "cargo test",
+            "--size",
+            "s",
+            "--scope",
+            "src",
+        ],
+    );
+    assert!(out.contains("added T-ALPHA-8"), "{out}");
+}
+
+#[test]
 fn a_started_task_takes_a_number_never_used_before() {
     let fx = Fx::new("add");
     let alpha = fx.clone_of("alpha");

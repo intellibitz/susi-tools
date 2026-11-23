@@ -90,6 +90,9 @@ fn used_numbers(repo: &Repo, stem: &str) -> Result<Vec<u64>, String> {
         repo.read(&[
             "log",
             "--all",
+            // Every merge parent: default history simplification follows a merge's parent whose
+            // tree matches, which hides a task added and closed on the other side.
+            "--full-history",
             "--format=",
             "--name-only",
             "--diff-filter=AD",
