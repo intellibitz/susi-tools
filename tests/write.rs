@@ -74,8 +74,8 @@ fn copy_dir(from: &Path, to: &Path) {
 /// The made-up repositories, built with Git once and then copied for each test: `origin.git`,
 /// whose main holds open tasks T-A-1, T-A-2 (waits on T-A-1) and T-A-3, and the clones `alpha`
 /// and `beta`. One template serves every test process and every run: cargo-nextest runs each
-/// test in its own process, and until 2026-11-22 each one built its own template (about ten git
-/// processes) and left it behind. The name carries a digest of this file, so a change here
+/// test in its own process, and a template of its own would cost each one about ten git
+/// processes. The name carries a digest of this file, so a change here
 /// builds a new template; a finished one has a `.complete` marker.
 fn template() -> &'static Path {
     static TEMPLATE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();

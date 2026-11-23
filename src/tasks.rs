@@ -260,8 +260,9 @@ pub fn close(repo: &Repo, id: &str) -> Result<String, String> {
     let record = json::parse(&text).map_err(|e| format!("{rel} is not JSON: {e}"))?;
     let cmd = accept_cmd(&record);
     safe_accept(&cmd)?;
-    // A repository that builds only elsewhere (Susi Core, on Linux) names a wrapper that runs
-    // the acceptance there: SUSI_TOOLS_ACCEPT_VIA="<program> [args]", given the command after.
+    // A host that cannot run a repository's acceptance itself names a wrapper that runs it
+    // elsewhere: SUSI_TOOLS_ACCEPT_VIA="<program> [args]", given the command after (the Windows
+    // host, for Susi Core's acceptance under Linux).
     let via: Vec<String> = std::env::var("SUSI_TOOLS_ACCEPT_VIA")
         .unwrap_or_default()
         .split_whitespace()

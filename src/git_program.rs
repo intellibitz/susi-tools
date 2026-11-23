@@ -8,10 +8,10 @@
 //! measured 2026-11-22). The real program sets up its own environment (`MSYSTEM`, and its own
 //! `bin` and `usr\bin` on the path for hooks and shell aliases) and reads the same system and
 //! global configuration, so starting it directly behaves the same. Anywhere else, and whenever
-//! that layout is not found, this is plain `git`, found on `PATH` as before.
+//! that layout is not found, this is plain `git`, found on `PATH`.
 //!
-//! The program and its tests include this file (`#[path]`), so they start the same `git`. Its
-//! tests are the program's (`src/main.rs`), run once.
+//! Both programs and the tests include this file (`#[path]`), so they start the same `git`. Its
+//! tests are `susi-tools`' (`src/main.rs`), run once.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};

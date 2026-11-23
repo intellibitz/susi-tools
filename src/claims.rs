@@ -5,8 +5,8 @@
 //! - `refs/claim-agents/<AGENT>`: the one claim an agent holds in this repository;
 //! - `refs/claim-generation/current`: the latest claim made, a counter every claim moves.
 //!
-//! The formats are the ones the earlier development program wrote, so both read each other's
-//! claims while agents move from one to the other.
+//! The earlier development program, which still answers on the Windows host the commands this
+//! one does not have, reads and writes the same formats.
 
 use crate::git::{PushOutcome, Repo, Update};
 use crate::json::{self, Json};
@@ -38,7 +38,7 @@ impl Claim {
         })
     }
 
-    /// Compact JSON in the earlier program's field order, no trailing newline.
+    /// Compact JSON in the field order every claim has, no trailing newline.
     pub fn render(&self) -> Vec<u8> {
         Json::Object(vec![
             ("branch".into(), Json::Str(self.branch.clone())),
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn a_claim_renders_as_the_earlier_program_wrote_it() {
+    fn a_claim_renders_in_its_fixed_field_order() {
         let claim = Claim {
             branch: "b".into(),
             scopes: vec!["src".into()],

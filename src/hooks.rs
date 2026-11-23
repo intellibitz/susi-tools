@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The single rules the Git hooks apply (`hook <stage>`, in `githook.rs`, runs them where a
 //! stage needs them). Each refuses only what its rule names, says why and how to proceed, and
-//! lets everything else through. The contracts are the earlier program's.
+//! lets everything else through.
 //!
 //! - The agent's own root: every agent works under its own root, a folder marked by a
 //!   `.susi-agent-root` file naming its agent. A commit inside another agent's root is refused,
@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 /// The file that marks an agent's root.
 pub const MARKER: &str = ".susi-agent-root";
-/// The marker's format, as the earlier program wrote and reads it.
+/// The marker's format, which the earlier program on the Windows host reads and writes too.
 pub const MARKER_SCHEMA: &str = "susi-agent-root-v1";
 /// Commits a checkout may lag behind the remote's `main` before a commit is refused.
 pub const DEFAULT_MAX_BEHIND: u64 = 20;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `susi-tools`: the development program of the Susi AI OS ecosystem, rebuilt small in Susi Tools
-//! (foundation plan, phase 3): the Board, the task queue and its claims, and shipping, over plain
-//! Git. It never writes a file of its own into a checkout: what it changes goes through Git.
+//! `susi-tools`: the development program of the Susi AI OS ecosystem: the Board, the task queue
+//! and its claims, shipping and the Git hooks' rules, over plain Git. It never writes a file of
+//! its own into a checkout: what it changes goes through Git.
 
 #![forbid(unsafe_code)]
 
@@ -54,7 +54,8 @@ Your agent root, which holds your clones, worktrees, build targets and scratch (
 refuse a commit inside another agent's root)
   susi-tools workflow root init --agent <name> [dir]   (default ~/susi-agents/<name>)
 
-Any other command goes to the earlier program, installed beside this one as susi-tools-legacy.
+Any other command goes to the earlier program where it is installed beside this one as
+susi-tools-legacy (the Windows host); elsewhere it is unknown.
 
 Every command also takes:
   --repo <path>    the checkout or worktree (default: the current directory); its origin
@@ -537,9 +538,9 @@ fn run(args: &[String]) -> Result<(), Failure> {
     }
 }
 
-/// A command this program does not have yet goes to the earlier program, installed beside it as
-/// `susi-tools-legacy` (or named by `SUSI_TOOLS_LEGACY`), so every instruction that names one
-/// keeps working while the contracts are shortened. Without it, the command is unknown.
+/// A command this program does not have goes to the earlier program where one is installed
+/// beside it as `susi-tools-legacy` (or named by `SUSI_TOOLS_LEGACY`): the Windows host, until its
+/// agents need none of that program's commands. Without it, the command is unknown.
 fn forward(args: &[String]) -> Result<(), Failure> {
     let legacy = std::env::var_os("SUSI_TOOLS_LEGACY")
         .map(PathBuf::from)

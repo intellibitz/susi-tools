@@ -2,13 +2,10 @@
 //! `local-harvest audit`: the legal ledger of harvested Apache-2.0 code, checked against Git;
 //! and `local-harvest notices`, which writes the `THIRD_PARTY_NOTICES` the audit expects.
 //!
-//! The same checks, messages and output as the audit of the earlier `local-harvest` program
-//! (Susi's `tools/core-xtask/src/harvest.rs` and its `harvest_retired.rs` and
-//! `harvest_corrections.rs`, commit `5404fd12`), rebuilt on 2026-11-22. That program started one
-//! `git` process per question, 89 for Susi's ledger, and took 4.5 s on Windows for 0.5 s of Git
-//! work; this one keeps one `cat-file --batch` running for every tree lookup and blob, hashes
-//! every file with one `hash-object --stdin-paths`, and asks each history question with one
-//! `log`, so the same audit starts about a dozen processes. Checked:
+//! It keeps one `cat-file --batch` running for every tree lookup and blob, hashes every file with
+//! one `hash-object --stdin-paths`, and asks each history question with one `log`, so an audit
+//! starts about a dozen processes instead of one per question (a process start costs tens of
+//! milliseconds on Windows). Checked:
 //!
 //! - each live manifest (`.agents/harvest/<ID>.json`): its shape; its license evidence and source
 //!   files are the recorded blobs at the pinned upstream commit, with the recorded SHA-256; every
@@ -642,7 +639,7 @@ fn has_modified_notice(text: &str) -> bool {
         .any(|line| line.to_lowercase().contains("modified by"))
 }
 
-/// JSON equality with object keys in any order, as the earlier audit compared records.
+/// JSON equality with object keys in any order.
 fn same_json(a: &Json, b: &Json) -> bool {
     match (a, b) {
         (Json::Object(x), Json::Object(y)) => {
@@ -1809,10 +1806,10 @@ pub fn audit(cwd: &Path, range: Option<&str>) -> Result<Report> {
     Ok(Report { ok, text })
 }
 
-/// `notices [--check]`, as the earlier `local-harvest notices` took it and with its words:
-/// write `THIRD_PARTY_NOTICES` at the top of the work tree as the manifests render it (Apache-2.0
-/// 4(d)), unless it already is; with `--check`, write nothing and say whether it is current,
-/// stale or missing. Invalid manifests refuse both, and nothing is written.
+/// `notices [--check]`: write `THIRD_PARTY_NOTICES` at the top of the work tree as the manifests
+/// render it (Apache-2.0 4(d)), unless it already is; with `--check`, write nothing and say
+/// whether it is current, stale or missing. Invalid manifests refuse both, and nothing is
+/// written.
 pub fn run_notices(cwd: &Path, args: &[String]) -> Result<Report> {
     let check = match args {
         [] => false,
@@ -1867,7 +1864,7 @@ pub fn run_notices(cwd: &Path, args: &[String]) -> Result<Report> {
     })
 }
 
-/// `audit [--range <A..B>]`, as the earlier `local-harvest audit` took it.
+/// `audit [--range <A..B>]`.
 pub fn run_audit(cwd: &Path, args: &[String]) -> Result<Report> {
     let mut range = None;
     let mut rest = args.iter();

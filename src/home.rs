@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Where the Susi Board lives. It is kept in Susi, the private repository, and only there: a
-//! public repository (Susi Core, Susi Tools) never holds Board items, and its server refuses
+//! public repository (Susi Core, Susi Tools) never holds Board items, and its firewall refuses
 //! them. Claims stay in each repository's own `origin`; Board items always go to Susi's.
 
 use crate::git::Repo;

@@ -369,7 +369,7 @@ fn a_removed_harvest_is_retired_with_its_commit_and_date() {
 }
 
 #[test]
-fn other_commands_go_to_the_earlier_program() {
+fn other_commands_are_refused_without_the_earlier_program() {
     let out = Command::new(env!("CARGO_BIN_EXE_local-harvest"))
         .arg("intake")
         .env_remove("LOCAL_HARVEST_LEGACY")

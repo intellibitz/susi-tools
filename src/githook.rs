@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `susi-tools hook <stage>`: what the Git hooks of Susi and Susi Core run. Each repository's
 //! `.githooks/<stage>` is one line that calls this, so the rules live in one place, written
-//! once and tested here (until 2026-11-23 they were about 1,400 lines of shell copied between
-//! the two repositories). What a repository asks for beyond the common rules, its hook says:
+//! once and tested here. What a repository asks for beyond the common rules, its hook says:
 //!
 //! - `--token-prefix <prefix>` (repeatable): the product's own licence tokens, `<prefix>.` or
 //!   `<prefix>:` and 40 or more token characters, are refused like any other secret. The prefix
@@ -29,9 +28,9 @@
 //! - `post-checkout <old> <new> <flag>`: after `git worktree add`, lists the finished worktrees
 //!   to remove first. Advice only.
 //!
-//! The public repositories' boundary (nothing of the private product enters them) is not
-//! checked here: each public repository's canonical server refuses it at push, with the same
-//! patterns, and a public program does not spell out the private product's markers.
+//! The public repositories' boundary (nothing of the private product enters them) is the public
+//! firewall's: `pre-push` in a public repository runs the script Susi keeps (`public_firewall`),
+//! so this public program never spells out the private product's markers.
 //!
 //! Escape hatches, deliberate and visible, never the default: those of the single rules (see
 //! `hooks.rs`) and `SUSI_ALLOW_SHARED_HOME` for the isolation check.
@@ -778,9 +777,8 @@ pub fn is_public(repo: &Repo) -> bool {
 /// the private product out of it: the script Susi keeps, named by `git config
 /// susi.publicFirewall`, given the refs being pushed as a server's pre-receive reads them (`old
 /// new ref`), and run in this repository. This public program does not spell out what the
-/// firewall looks for. Until 2026-11-23 each public repository's own server ran it; their source
-/// of truth then moved to a host that runs no hooks, so every push runs it here, and a push with
-/// no firewall named is refused.
+/// firewall looks for. The repositories of record run no server hooks, so every push runs it
+/// here, and a push with no firewall named is refused.
 fn public_firewall(repo: &Repo, records: &str) -> Result<(), String> {
     let script = repo
         .try_read(&["config", "--get", "susi.publicFirewall"])
@@ -899,7 +897,7 @@ fn push_rule(repo: &Repo, local: &str, remote_ref: &str, remote: &str) -> Result
         return Ok(());
     }
     if remote_ref.starts_with("refs/board/") {
-        // A public repository's server refuses every Board ref; here only their shape is checked.
+        // A public repository's firewall refuses every Board ref; here only their shape is checked.
         let number = remote_ref.strip_prefix("refs/board/items/").unwrap_or("");
         if number.is_empty()
             || number.starts_with('0')
