@@ -142,7 +142,11 @@ Board, tasks and claims); the rules below are this repository's own.
   calls by that name. `audit [--range <A..B>]` checks the ledger of harvested
   Apache-2.0 code against Git: each manifest's upstream blobs and evidence,
   the Apache-2.0 4(a) to 4(d) notices, the retired records and the `Harvest:`
-  citations of the range. `notices [--check]` writes the `THIRD_PARTY_NOTICES`
+  citations of the range. In a shallow clone (every fresh clone of Susi from
+  Cloudflare, whose copy starts at `17339d28`, such as a lander's) a retired
+  record or correction naming a commit beyond its history is taken as recorded,
+  and the summary says how many; a clone with the whole history checks them
+  all (T-CLAUDE-10). `notices [--check]` writes the `THIRD_PARTY_NOTICES`
   the audit expects, or with `--check` only says whether it is current. It
   keeps one `git cat-file --batch` running and walks cached trees instead of
   starting a process per question: on Susi's ledger it took 0.8 s warm with 12

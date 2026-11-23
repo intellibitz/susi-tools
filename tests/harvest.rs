@@ -354,6 +354,30 @@ fn a_removed_harvest_is_retired_with_its_commit_and_date() {
         "{}",
         text(&out)
     );
+    assert!(!text(&out).contains("shallow"), "{}", text(&out));
+    // A shallow clone (every fresh clone of Susi from Cloudflare, whose copy starts at 17339d28)
+    // lacks the removing commit: the record is taken as recorded there, and the summary says so.
+    let shallow = Repo {
+        root: repo.root.with_extension("shallow"),
+    };
+    let _ = std::fs::remove_dir_all(&shallow.root);
+    repo.git(&[
+        "clone",
+        "-q",
+        "--depth",
+        "1",
+        &format!("file://{}", repo.root.display()),
+        &shallow.root.to_string_lossy(),
+    ]);
+    let out = shallow.audit(&["--range", "HEAD"]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(
+        text(&out).contains(
+            "1 retired record(s) or correction(s) name commits beyond this shallow clone's history, taken as recorded"
+        ),
+        "{}",
+        text(&out)
+    );
     repo.write(
         ".agents/harvest/retired/H-TEST-1.json",
         &record("1999-01-01"),

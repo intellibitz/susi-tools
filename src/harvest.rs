@@ -39,6 +39,8 @@ const CORRECTIONS_PATH: &str = ".agents/harvest-corrections.json";
 const CORRECTIONS_SCHEMA: &str = "susi-harvest-trailer-corrections-v1";
 const NOTE: &str = "retired";
 const NOTE_FIELDS: [&str; 3] = ["removed_on", "removed_by_commit", "reason"];
+/// Why a commit could not be checked: a shallow clone does not hold it.
+const BEYOND: &str = "is beyond this shallow clone's history";
 const MAX_REASON_CHARS: usize = 400;
 const REJECT_PHRASES: [&str; 7] = [
     "GNU General Public License",
@@ -61,6 +63,12 @@ pub struct Report {
 struct Git {
     root: PathBuf,
     ancestors: OnceCell<HashSet<String>>,
+    /// In a shallow clone, the commits at its boundary, whose parents it does not have; `None`
+    /// in a clone with its whole history.
+    shallow: OnceCell<Option<HashSet<String>>>,
+    /// Records and corrections naming commits beyond a shallow clone's history: taken as
+    /// recorded here, re-checked where the history is whole.
+    beyond: std::cell::Cell<usize>,
     /// One `git cat-file --batch` for every lookup and blob of the audit: on Windows each process
     /// start costs tens of milliseconds, more than the questions themselves.
     objects: RefCell<Option<Batch>>,
@@ -95,6 +103,8 @@ impl Git {
         let probe = Git {
             root: cwd.to_path_buf(),
             ancestors: OnceCell::new(),
+            shallow: OnceCell::new(),
+            beyond: std::cell::Cell::new(0),
             objects: RefCell::new(None),
             trees: RefCell::new(HashMap::new()),
             roots: RefCell::new(HashMap::new()),
@@ -105,6 +115,8 @@ impl Git {
         Ok(Git {
             root: PathBuf::from(top),
             ancestors: OnceCell::new(),
+            shallow: OnceCell::new(),
+            beyond: std::cell::Cell::new(0),
             objects: RefCell::new(None),
             trees: RefCell::new(HashMap::new()),
             roots: RefCell::new(HashMap::new()),
@@ -370,6 +382,46 @@ impl Git {
             let _ = self.ancestors.set(set);
         }
         Ok(self.ancestors.get().is_some_and(|s| s.contains(commit)))
+    }
+
+    /// Whether `commit` lies beyond this clone's history: a shallow clone (every fresh clone of
+    /// Susi from Cloudflare Artifacts, whose copy starts at 17339d28) that lacks it, or holds it
+    /// only at its boundary, without its parent. Always false in a clone with its whole history.
+    fn beyond_history(&self, commit: &str) -> Result<bool> {
+        if self.shallow.get().is_none() {
+            let shallow = String::from_utf8_lossy(
+                &self.checked(&["rev-parse", "--is-shallow-repository"], None)?,
+            )
+            .trim()
+                == "true";
+            let boundary = if shallow {
+                let path = String::from_utf8_lossy(
+                    &self.checked(&["rev-parse", "--git-path", "shallow"], None)?,
+                )
+                .trim()
+                .to_owned();
+                let path = if Path::new(&path).is_absolute() {
+                    PathBuf::from(path)
+                } else {
+                    self.root.join(path)
+                };
+                Some(
+                    fs::read_to_string(path)
+                        .unwrap_or_default()
+                        .lines()
+                        .map(|l| l.trim().to_owned())
+                        .filter(|l| !l.is_empty())
+                        .collect(),
+                )
+            } else {
+                None
+            };
+            let _ = self.shallow.set(boundary);
+        }
+        let Some(Some(boundary)) = self.shallow.get() else {
+            return Ok(false);
+        };
+        Ok(boundary.contains(commit) || self.commits(&[commit.to_owned()])?.first() != Some(&true))
     }
 
     fn read_blobs(&self, oids: &BTreeSet<String>) -> Result<BTreeMap<String, Vec<u8>>> {
@@ -1221,7 +1273,9 @@ fn removals(
     let known = git.commits(&ids)?;
     let mut usable = Vec::new();
     for (commit, known) in ids.iter().zip(known) {
-        if !is_hex_oid(commit) || !known {
+        if is_hex_oid(commit) && git.beyond_history(commit)? {
+            out.insert(commit.clone(), Err(BEYOND.into()));
+        } else if !is_hex_oid(commit) || !known {
             out.insert(
                 commit.clone(),
                 Err("is not a full commit id of this repository".into()),
@@ -1421,6 +1475,8 @@ fn audit_retired(
                     )),
                 }
             }
+            // A commit this shallow clone does not hold: the record is taken as recorded here.
+            Some(Err(why)) if why == BEYOND => git.beyond.set(git.beyond.get() + 1),
             Some(Err(why)) => violations.push(format!("{ctx}: removed_by_commit {commit} {why}")),
             None => violations.push(format!(
                 "{ctx}: removed_by_commit {commit} must be an ordinary commit with exactly one parent"
@@ -1634,6 +1690,12 @@ fn load_corrections(
         let old = field(row, "old_label")?;
         let replacement = field(row, origin_field)?;
         let reason = field(row, "reason")?;
+        // A correction of a commit this shallow clone does not hold cannot be checked or cited
+        // here: it is taken as recorded, and checked where the history is whole.
+        if is_hex_oid(commit) && git.beyond_history(commit)? {
+            git.beyond.set(git.beyond.get() + 1);
+            continue;
+        }
         if !is_hex_oid(commit)
             || old
                 .chars()
@@ -1789,6 +1851,14 @@ pub fn audit(cwd: &Path, range: Option<&str>) -> Result<Report> {
         cited.corrected,
         cited.refused
     );
+    let tally = if git.beyond.get() > 0 {
+        format!(
+            "{tally}; {} retired record(s) or correction(s) name commits beyond this shallow clone's history, taken as recorded (checked where the history is whole)",
+            git.beyond.get()
+        )
+    } else {
+        tally
+    };
     let ok = violations.is_empty();
     let text = if ok {
         format!(
