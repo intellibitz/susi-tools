@@ -1572,3 +1572,75 @@ fn the_lead_adds_a_task_and_another_agent_works_from_its_brief_alone() {
         "a claimed task is not next: {after}"
     );
 }
+
+/// V-49: the lead is a role any agent takes. `lead` gives its bearings from the brick map on main;
+/// `lead claim` takes the lead, refused while another agent's is live unless `--take`, which tells
+/// the one it took from on the Board; only the agent that leads releases it.
+#[test]
+fn the_lead_is_a_role_any_agent_takes() {
+    let fx = Fx::new("lead");
+    let alpha = fx.clone_of("alpha");
+    std::fs::write(
+        alpha.join(".agents/bricks.json"),
+        r#"{"schema":"susi.bricks/v1","rules":[],"bricks":[{"name":"vault","title":"The vault","visions":["V-1"],"sold_as":"SKU-V","rung":"built","state":"on main","next":"ship it to a customer","tasks":["T-A-1","T-A-9"],"waits_on_ceo":"its price"}]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        alpha.join(".agents/visions/V-2.json"),
+        r#"{"id":"V-2","statement":"something new"}"#,
+    )
+    .unwrap();
+    fx.git(&alpha, &["add", "-A"]);
+    fx.git(&alpha, &["commit", "-q", "-m", "the brick map"]);
+    fx.git(&alpha, &["push", "-q", "origin", "HEAD:main"]);
+
+    let bearings = fx.ok("alpha", &["lead"]);
+    for part in [
+        "lead: nobody leads",
+        "vault",
+        "built",
+        "ship it to a customer",
+        "T-A-1 (open)",
+        "T-A-9 (closed)",
+        "waits on the CEO:",
+        "vault: its price",
+        "visions placed nowhere (a brick's or the rules'): V-2",
+        "open tasks no brick names:",
+        "T-A-2",
+    ] {
+        assert!(
+            bearings.contains(part),
+            "{part:?} missing from:\n{bearings}"
+        );
+    }
+
+    let out = fx.ok("alpha", &["lead", "claim"]);
+    assert!(out.contains("ALPHA leads until unix"), "{out}");
+    assert!(fx.origin_ref("refs/lead/current").is_some());
+    let claim = fx.origin_blob("refs/lead/current");
+    assert!(claim.contains("\"agent\": \"ALPHA\""), "{claim}");
+    let out = fx.ok("alpha", &["lead", "claim"]);
+    assert!(out.contains("(renewed)"), "{out}");
+    assert!(fx.ok("alpha", &["lead"]).contains("ALPHA leads until unix"));
+
+    fx.refused("beta", &["lead", "claim"], "ALPHA leads until unix");
+    fx.refused("beta", &["lead", "release"], "ALPHA leads, not BETA");
+    let out = fx.ok("beta", &["lead", "claim", "--take", "--hours", "2"]);
+    assert!(out.contains("BETA leads until unix"), "{out}");
+    // Alpha is told at its next look.
+    let told = fx.ok("alpha", &["workflow", "check"]);
+    assert!(
+        told.contains("Leads Susi until unix") && told.contains("to ALPHA"),
+        "{told}"
+    );
+    let bearings = fx.ok("alpha", &["lead"]);
+    assert!(bearings.contains("BETA leads until unix"), "{bearings}");
+    assert!(bearings.contains("lead claim --take"), "{bearings}");
+
+    let out = fx.ok("beta", &["lead", "release"]);
+    assert!(out.contains("released the lead"), "{out}");
+    assert!(fx.origin_ref("refs/lead/current").is_none());
+    assert!(fx.ok("beta", &["lead"]).contains("lead: nobody leads"));
+    let out = fx.ok("beta", &["lead", "release"]);
+    assert!(out.contains("nobody leads"), "{out}");
+}

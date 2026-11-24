@@ -18,6 +18,7 @@ mod home;
 mod hooks;
 mod json;
 mod land;
+mod lead;
 mod ship;
 mod speed;
 mod tasks;
@@ -65,6 +66,14 @@ Speed
                                  every gate before a ship (tests, tests without default features,
                                  format, Clippy, Clippy per target), side by side, inside the line
 Harvested code: the second program, local-harvest audit [--range <A..B>] | notices [--check]
+The lead (a role any agent takes: the one the CEO is talking to)
+  susi-tools lead                the lead's bearings: who leads, the brick map with each brick's
+                                 rung, next step and tasks, what waits on the CEO, the visions
+                                 placed nowhere, the open tasks no brick names, the Board for you
+  susi-tools lead claim [--hours <1-24>] [--take]
+                                 lead (8 hours unless told); --take when another agent leads and
+                                 the CEO is talking to you: the Board tells the one you took it from
+  susi-tools lead release        give the lead up
 The session start
   susi-tools workflow check      fast-forward a clean checkout, show unanswered requests and the
                                  Board items addressed to you not shown yet, say what you hold
@@ -144,6 +153,7 @@ struct Options {
     reads: Vec<String>,
     for_agent: Option<String>,
     cold: bool,
+    take: bool,
     json: bool,
 }
 
@@ -162,6 +172,10 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
         match name {
             "--cold" => {
                 o.cold = true;
+                continue;
+            }
+            "--take" => {
+                o.take = true;
                 continue;
             }
             "--json" => {
@@ -316,6 +330,76 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
             Ok(check::board_check(&o.board(&repo)?, REMOTE, &agent)?)
+        }
+        ["lead", "claim", ..] => {
+            let o = parse(rest, &["--hours", "--take"])?;
+            let repo = o.repo()?;
+            let agent = agent::name(o.agent.as_deref(), &repo)?;
+            let board = o.board(&repo)?;
+            let hours = o.hours.unwrap_or(lead::DEFAULT_HOURS);
+            let token = agent::token(&agent)?;
+            match lead::claim(&board, REMOTE, &agent, hours, o.take)? {
+                lead::Claimed::Renewed(l) => {
+                    println!("{} leads until unix {} (renewed)", l.agent, l.until_unix);
+                    Ok(())
+                }
+                lead::Claimed::Took { lead: l, from } => {
+                    println!("{} leads until unix {}", l.agent, l.until_unix);
+                    let title = format!("Leads Susi until unix {}", l.until_unix);
+                    let body = match &from {
+                        Some(previous) => format!(
+                            "Took the lead from {previous}: the CEO is talking to {token} now."
+                        ),
+                        None => "Took the lead; nobody held it.".to_owned(),
+                    };
+                    post_line(
+                        &board,
+                        REMOTE,
+                        &board::Post {
+                            kind: if from.is_some() { "heads-up" } else { "claim" },
+                            agent: &token,
+                            title: &title,
+                            body: &body,
+                            to: from.as_deref(),
+                            re: None,
+                            task: None,
+                        },
+                    )
+                }
+            }
+        }
+        ["lead", "release", ..] => {
+            let o = parse(rest, &[])?;
+            let repo = o.repo()?;
+            let agent = agent::name(o.agent.as_deref(), &repo)?;
+            let board = o.board(&repo)?;
+            if lead::release(&board, REMOTE, &agent)? {
+                println!("released the lead");
+                post_line(
+                    &board,
+                    REMOTE,
+                    &board::Post {
+                        kind: "handoff",
+                        agent: &agent::token(&agent)?,
+                        title: "Released the lead",
+                        body: "Nobody leads until the agent the CEO talks to next takes it.",
+                        to: None,
+                        re: None,
+                        task: None,
+                    },
+                )
+            } else {
+                println!("nobody leads: nothing to release");
+                Ok(())
+            }
+        }
+        ["lead", ..] => {
+            let o = parse(args.get(1..).unwrap_or(&[]), &[])?;
+            let repo = o.repo()?;
+            let agent = agent::name(o.agent.as_deref(), &repo)?;
+            let board = o.board(&repo)?;
+            print!("{}", lead::bearings(&board, REMOTE, &agent)?);
+            Ok(check::board_check(&board, REMOTE, &agent)?)
         }
         ["workflow", "check", ..] => {
             let o = parse(rest, &[])?;

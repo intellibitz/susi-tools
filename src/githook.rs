@@ -39,12 +39,14 @@ use std::path::{Path, PathBuf};
 /// A staged or pushed blob this large is refused when new, and advised about when it changes.
 pub const MAX_BLOB_BYTES: u64 = 1_048_576;
 /// The task queue's record namespaces: compare-and-swap blobs, not source history.
-const QUEUE_NAMESPACES: [&str; 5] = [
+const QUEUE_NAMESPACES: [&str; 6] = [
     "refs/claims/",
     "refs/claim-agents/",
     "refs/claim-generation/",
     "refs/closed/",
     "refs/abandoned/",
+    // The lead's claim (`susi-tools lead`): one compare-and-swap blob, as a task's claim is.
+    "refs/lead/",
 ];
 
 const USAGE: &str = "\
