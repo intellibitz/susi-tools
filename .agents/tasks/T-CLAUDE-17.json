@@ -1,0 +1,28 @@
+{
+  "id": "T-CLAUDE-17",
+  "title": "The lead: a claim any agent takes, and its bearings in one command",
+  "goal": "",
+  "vision": "V-49",
+  "size": "s",
+  "deps": [],
+  "scope": [
+    "src/lead.rs",
+    "src/main.rs",
+    "src/githook.rs",
+    "tests/write.rs",
+    "README.md"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--test",
+      "write"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795538902
+}
