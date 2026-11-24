@@ -49,8 +49,10 @@ Board, tasks and claims); the rules below are this repository's own.
     does the Board part.
   - **The lead** (a role, not a vendor: whichever agent the CEO is talking
     to leads that session; Susi's `docs/bricks.md`): `lead` prints its
-    bearings (who leads, the brick map on main, `.agents/bricks.json`, with
-    each brick's rung, next step and tasks, the foundation's tasks (the
+    bearings (who leads, the brick map on main, `.agents/bricks.json`, its
+    bricks by stage: in flight against the map's band, next in rank, kept
+    up, parked, each with its rung, next step, tasks and why, and a warning
+    when the band is broken; the foundation's tasks (the
     map's `foundation`: for the whole, no one brick's), what waits on the
     CEO, the visions placed nowhere and the open tasks the map names
     nowhere, then the Board for you); `lead claim [--hours <1-24>] [--take]` takes the lead,

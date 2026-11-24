@@ -1651,3 +1651,41 @@ fn the_lead_is_a_role_any_agent_takes() {
     let out = fx.ok("beta", &["lead", "release"]);
     assert!(out.contains("nobody leads"), "{out}");
 }
+
+/// V-50: the bearings show the bricks by stage, in flight against the band, and say when the
+/// band is broken, so the lead moves the first next brick up or parks one.
+#[test]
+fn the_bearings_group_bricks_by_stage_within_the_band() {
+    let fx = Fx::new("band");
+    let alpha = fx.clone_of("alpha");
+    std::fs::write(
+        alpha.join(".agents/bricks.json"),
+        r#"{"schema":"susi.bricks/v1","band":{"in_flight_min":2,"in_flight_max":3,"next_max":2},"rules":[],"bricks":[
+{"name":"face","title":"t","visions":["V-1"],"sold_as":"","rung":"used","stage":"in-flight","reason":"nearest to ready","state":"s","next":"a clean machine","tasks":[],"waits_on_ceo":""},
+{"name":"vault","title":"t","visions":["V-1"],"sold_as":"SKU-V","rung":"released","stage":"maintain","reason":"released","state":"s","next":"","tasks":[],"waits_on_ceo":""},
+{"name":"router","title":"t","visions":["V-1"],"sold_as":"","rung":"planned","stage":"next","reason":"cheapest that passes","state":"s","next":"an order","tasks":[],"waits_on_ceo":""},
+{"name":"ops","title":"t","visions":["V-1"],"sold_as":"","rung":"planned","stage":"next","reason":"past software","state":"s","next":"a task","tasks":[],"waits_on_ceo":""},
+{"name":"extra","title":"t","visions":["V-1"],"sold_as":"","rung":"planned","stage":"next","reason":"one too many","state":"s","next":"x","tasks":[],"waits_on_ceo":""},
+{"name":"idea","title":"t","visions":["V-1"],"sold_as":"","rung":"planned","stage":"parked","reason":"later","state":"s","next":"","tasks":[],"waits_on_ceo":""}]}"#,
+    )
+    .unwrap();
+    fx.git(&alpha, &["add", "-A"]);
+    fx.git(&alpha, &["commit", "-q", "-m", "a map in stages"]);
+    fx.git(&alpha, &["push", "-q", "origin", "HEAD:main"]);
+    let bearings = fx.ok("alpha", &["lead"]);
+    let at = |part: &str| {
+        bearings
+            .find(part)
+            .unwrap_or_else(|| panic!("{part:?} missing from:\n{bearings}"))
+    };
+    // In stage order, each heading before its bricks.
+    assert!(at("in flight (1 of 2 to 3):") < at("    face "));
+    assert!(at("    face ") < at("next, in rank:"));
+    assert!(at("next, in rank:") < at("    router "));
+    assert!(at("    router ") < at("    ops "));
+    assert!(at("kept up:") < at("    vault "));
+    assert!(at("parked:") < at("    idea "));
+    at("why: nearest to ready");
+    at("the band is broken: 1 in flight, the band is 2 to 3");
+    at("the band is broken: 3 next, at most 2");
+}

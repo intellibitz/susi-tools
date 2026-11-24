@@ -217,39 +217,109 @@ pub fn bearings(board: &Repo, remote: &str, agent: &str) -> Result<String, Strin
     let mut named_tasks: Vec<String> = Vec::new();
     let mut placed: Vec<String> = strings(map.get("rules"));
     let mut waits = Vec::new();
-    out.push_str("bricks (.agents/bricks.json on main):\n");
-    for brick in &bricks {
-        let name = brick.text("name");
-        let next = brick.text("next");
-        out.push_str(&format!(
-            "  {:<16} {:<9} {}\n",
-            name,
-            brick.text("rung"),
-            if next.is_empty() { "-" } else { next.as_str() }
-        ));
-        let tasks = strings(brick.get("tasks"));
-        if !tasks.is_empty() {
-            let shown: Vec<String> = tasks
-                .iter()
-                .map(|id| {
-                    if !open.iter().any(|t| &t.id == id) {
-                        format!("{id} (closed)")
-                    } else {
-                        match claims.on_task(id) {
-                            Some((_, _, c)) if c.live(now) => format!("{id} (held by {})", c.agent),
-                            _ => format!("{id} (open)"),
-                        }
+    let task_line = |tasks: &[String]| -> String {
+        tasks
+            .iter()
+            .map(|id| {
+                if !open.iter().any(|t| &t.id == id) {
+                    format!("{id} (closed)")
+                } else {
+                    match claims.on_task(id) {
+                        Some((_, _, c)) if c.live(now) => format!("{id} (held by {})", c.agent),
+                        _ => format!("{id} (open)"),
                     }
-                })
-                .collect();
-            out.push_str(&format!("  {:<16} tasks: {}\n", "", shown.join(", ")));
-        }
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    for brick in &bricks {
         let wait = brick.text("waits_on_ceo");
         if !wait.is_empty() {
-            waits.push(format!("  {name}: {wait}"));
+            waits.push(format!("  {}: {wait}", brick.text("name")));
         }
-        named_tasks.extend(tasks);
+        named_tasks.extend(strings(brick.get("tasks")));
         placed.extend(strings(brick.get("visions")));
+    }
+    // The bricks by stage (V-50): in flight within the band, next in rank, kept up, parked.
+    let band = map.get("band");
+    let limit = |key: &str| band.and_then(|b| b.get(key)).and_then(Json::as_i64);
+    let staged = |stage: &str| -> Vec<&Json> {
+        bricks.iter().filter(|b| b.text("stage") == stage).collect()
+    };
+    let in_flight = staged("in-flight");
+    let next = staged("next");
+    let groups: [(&str, String); 5] = [
+        (
+            "in-flight",
+            match (limit("in_flight_min"), limit("in_flight_max")) {
+                (Some(low), Some(high)) => {
+                    format!("in flight ({} of {low} to {high}):", in_flight.len())
+                }
+                _ => "in flight:".to_owned(),
+            },
+        ),
+        ("next", "next, in rank:".to_owned()),
+        ("maintain", "kept up:".to_owned()),
+        ("parked", "parked:".to_owned()),
+        ("", "bricks with no stage:".to_owned()),
+    ];
+    out.push_str("bricks (.agents/bricks.json on main):\n");
+    for (stage, heading) in &groups {
+        let members: Vec<&Json> = bricks
+            .iter()
+            .filter(|b| {
+                let s = b.text("stage");
+                if stage.is_empty() {
+                    !["in-flight", "next", "maintain", "parked"].contains(&s.as_str())
+                } else {
+                    s == *stage
+                }
+            })
+            .collect();
+        if members.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("  {heading}\n"));
+        for brick in members {
+            let next_step = brick.text("next");
+            out.push_str(&format!(
+                "    {:<16} {:<9} {}\n",
+                brick.text("name"),
+                brick.text("rung"),
+                if next_step.is_empty() {
+                    "-"
+                } else {
+                    next_step.as_str()
+                }
+            ));
+            let tasks = strings(brick.get("tasks"));
+            if !tasks.is_empty() {
+                out.push_str(&format!("    {:<16} tasks: {}\n", "", task_line(&tasks)));
+            }
+            if matches!(*stage, "in-flight" | "next" | "parked") {
+                let reason = brick.text("reason");
+                if !reason.is_empty() {
+                    out.push_str(&format!("    {:<16} why: {reason}\n", ""));
+                }
+            }
+        }
+    }
+    if let (Some(low), Some(high)) = (limit("in_flight_min"), limit("in_flight_max")) {
+        let flying = in_flight.len() as i64;
+        if !(low..=high).contains(&flying) {
+            out.push_str(&format!(
+                "the band is broken: {flying} in flight, the band is {low} to {high}: move the first next brick up, or park one\n"
+            ));
+        }
+    }
+    if let Some(most) = limit("next_max") {
+        if next.len() as i64 > most {
+            out.push_str(&format!(
+                "the band is broken: {} next, at most {most}: park the rest with a reason\n",
+                next.len()
+            ));
+        }
     }
     // Tasks for the whole, no one brick's: the toolchain, a rename, the tooling, the documents.
     let foundation = strings(map.get("foundation"));
