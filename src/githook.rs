@@ -558,9 +558,19 @@ fn canon(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// Paths compared as the host compares them: Windows folds case.
+/// Paths compared as the host compares them: Windows folds case, and names one folder both with
+/// and without the `\\?\` prefix. Canonicalizing gives a folder that exists the prefix and leaves
+/// one that does not yet exist plain, so until 2026-11-24 (T-CLAUDE-11) the isolation check missed
+/// a new SUSI_HOME inside a checkout on Windows.
 fn key(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
+    let text = match text.strip_prefix("//?/") {
+        Some(rest) => match rest.strip_prefix("UNC/") {
+            Some(share) => format!("//{share}"),
+            None => rest.to_owned(),
+        },
+        None => text,
+    };
     let text = text.trim_end_matches('/').to_owned();
     if cfg!(windows) {
         text.to_lowercase()
@@ -980,6 +990,21 @@ fn advise_finished_worktrees(repo: &Repo) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_is_the_same_with_or_without_the_verbatim_prefix() {
+        let plain = Path::new(r"C:\Users\agent\work");
+        assert!(under(Path::new(r"\\?\C:\Users\agent\work\state"), plain));
+        assert!(under(
+            Path::new(r"C:\Users\agent\work\state"),
+            Path::new(r"\\?\C:\Users\agent\work")
+        ));
+        assert_eq!(
+            key(Path::new(r"\\?\UNC\server\share\x")),
+            key(Path::new(r"\\server\share\x"))
+        );
+        assert!(!under(Path::new(r"C:\Users\agent\workshop"), plain));
+    }
 
     #[test]
     fn secret_shapes_are_found_and_their_names_alone_are_not() {
