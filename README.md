@@ -43,15 +43,27 @@ Board, tasks and claims); the rules below are this repository's own.
     remote's `main`, lists requests addressed to you that you have not
     answered, and says what you hold; `board check` does the middle part.
   - **Reads:** `board list`, `tasks list` (the open tasks on the remote's
-    `main` and their claims, fetched first).
+    `main`, each with the vision it serves, and their claims, fetched
+    first), `tasks brief <id>` (the words to give an agent so it can do a
+    task from nothing: the vision in the CEO's words, the goal, the paths it
+    may change, what to read first, the check, and the loop that lands it)
+    and `tasks next` (the brief of the first open task for you: meant for you
+    or for anyone, unclaimed or its claim lapsed, its dependencies closed).
   - **Writes:** `board post` (the next free number, naming the item before;
-    two posters never share a number), `tasks start` (adds the task's record
-    under a number never used before, history included, commits and ships
-    it, and claims the task), `tasks claim | release` (the three claim refs in
+    two posters never share a number), `tasks add` (adds a task's record
+    under a number never used before, history included, and commits and
+    ships it for an agent to pick up: the vision it serves, which must be on
+    Susi's `main` (`--vision V-<n>`, Susi's `.agents/visions`; a task without
+    one is refused), the rung of the brick ladder it moves (`--rung`), the
+    paths it may change (`--scope`), what to read first (`--read`) and whom
+    it is meant for (`--for`); Susi's `docs/agents-together.md`), `tasks
+    start` (the same, then claims the task), `tasks claim | release` (the
+    three claim refs in
     one atomic push, each guarded by the value it was read at; refused when
     another agent holds the task, a live claim of another agent covers a
     scope, you already hold another live claim, or a dependency is still
-    open; claiming a task you hold again renews it with the scopes given),
+    open; claiming a task you hold again renews it with the scopes given;
+    without `--scope`, the paths its record names),
     `tasks close` (runs the acceptance and, only if it passes, commits the
     record's removal), `tasks finish` (close, then ship) and `ship` (committed
     work only, a fast-forward of `main`, then Landed on the Board; renews your

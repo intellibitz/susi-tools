@@ -36,10 +36,19 @@ The Board
                         [--to <agent|all>] [--re <n>] [--task <id>]
 Tasks
   susi-tools tasks list
-  susi-tools tasks claim <id> --scope <path>... [--hours <1-24>]
+  susi-tools tasks add <title> --accept <command> --scope <path>... --vision V-<n> [--for <agent>]
+                       [--read <path>]... [--rung built|used|ready|released|delivered]
+                       [--goal <text>] [--size xs|s|m|l] [--dep <id>]...
+                                 add, commit and ship a task's record for an agent to pick up
+  susi-tools tasks brief <id>    the words to give an agent so it can do the task from nothing
+  susi-tools tasks next          the brief of the next open task for you (meant for you or anyone,
+                                 unclaimed, its dependencies closed)
+  susi-tools tasks claim <id> [--scope <path>...] [--hours <1-24>]
+                                 without --scope, the paths its record names
   susi-tools tasks release <id>
   susi-tools tasks close <id>
-  susi-tools tasks start <title> --accept <command> --scope <path>... [--goal <text>] [--size xs|s|m|l]
+  susi-tools tasks start <title> --accept <command> --scope <path>... --vision V-<n>
+                         [--read <path>]... [--rung <rung>] [--goal <text>] [--size xs|s|m|l]
                          [--dep <id>]... [--hours <1-24>]
                                  add, commit and ship the task's record, then claim it: one command
   susi-tools tasks finish <id>   close the task (its acceptance runs) and ship: one command
@@ -129,6 +138,10 @@ struct Options {
     deps: Vec<String>,
     scopes: Vec<String>,
     hours: Option<i64>,
+    vision: Option<String>,
+    rung: Option<String>,
+    reads: Vec<String>,
+    for_agent: Option<String>,
     cold: bool,
     json: bool,
 }
@@ -179,6 +192,10 @@ fn parse(rest: &[String], allowed: &[&str]) -> Result<Options, Failure> {
             "--size" => o.size = Some(value),
             "--dep" => o.deps.push(value),
             "--scope" => o.scopes.push(value),
+            "--vision" => o.vision = Some(value),
+            "--rung" => o.rung = Some(value),
+            "--read" => o.reads.push(value),
+            "--for" => o.for_agent = Some(value),
             "--hours" => o.hours = Some(number(&value)?),
             _ => return Err(Failure::Usage(format!("unknown option {name}"))),
         }
@@ -352,44 +369,57 @@ fn run(args: &[String]) -> Result<(), Failure> {
                     Some((_, _, c)) => format!("claim by {} lapsed", c.agent),
                     None => "unclaimed".to_owned(),
                 };
+                let vision = t.record.text("vision");
                 println!(
-                    "  {:<22} {:<2} {:<26} {}",
+                    "  {:<22} {:<2} {:<6} {:<26} {}",
                     t.id,
                     t.record.text("size"),
+                    if vision.is_empty() {
+                        "-"
+                    } else {
+                        vision.as_str()
+                    },
                     holder,
                     t.record.text("title")
                 );
             }
             Ok(())
         }
-        ["tasks", "start", ..] => {
-            let o = parse(
-                rest,
-                &[
-                    "--accept", "--goal", "--size", "--dep", "--scope", "--hours",
-                ],
-            )?;
+        ["tasks", "add" | "start", ..] => {
+            let starting = words[1] == "start";
+            let mut allowed = vec![
+                "--accept", "--goal", "--size", "--dep", "--scope", "--vision", "--rung", "--read",
+            ];
+            allowed.push(if starting { "--hours" } else { "--for" });
+            let o = parse(rest, &allowed)?;
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
+            let command = words[1];
             let title = match o.positional.as_slice() {
                 [title] => title.clone(),
-                _ => return Err(Failure::Usage("tasks start takes one title".into())),
+                _ => return Err(Failure::Usage(format!("tasks {command} takes one title"))),
             };
             if o.scopes.is_empty() {
-                return Err(Failure::Usage(
-                    "tasks start needs --scope <path>: what the task will change".into(),
-                ));
+                return Err(Failure::Usage(format!(
+                    "tasks {command} needs --scope <path>: what the task will change"
+                )));
             }
+            let Some(vision) = o.vision.clone() else {
+                return Err(Failure::Usage(format!(
+                    "tasks {command} needs --vision V-<n>: the CEO's vision it serves (Susi's .agents/visions)"
+                )));
+            };
             if !repo
                 .read(&["status", "--porcelain", "--untracked-files=no"])?
                 .trim()
                 .is_empty()
             {
-                return Err(Failure::Run(
-                    "commit or set aside your changes first: tasks start commits only its own record"
-                        .into(),
-                ));
+                return Err(Failure::Run(format!(
+                    "commit or set aside your changes first: tasks {command} commits only its own record"
+                )));
             }
+            // A task serves a vision the CEO set: on Susi's main, not only in a checkout.
+            tasks::vision_statement(&o.board(&repo)?, &vision)?;
             let accept: Vec<String> = o
                 .accept
                 .clone()
@@ -406,6 +436,11 @@ fn run(args: &[String]) -> Result<(), Failure> {
                     accept: &accept,
                     deps: &o.deps,
                     agent: &agent,
+                    vision: &vision,
+                    rung: o.rung.as_deref().unwrap_or(""),
+                    scope: &o.scopes,
+                    read: &o.reads,
+                    for_agent: o.for_agent.as_deref().unwrap_or(""),
                 },
             )?;
             let record = path.display().to_string();
@@ -423,6 +458,10 @@ fn run(args: &[String]) -> Result<(), Failure> {
             println!("added {id} and committed its record");
             let common = o.common_args();
             run(&[vec!["ship".to_owned()], common.clone()].concat())?;
+            if !starting {
+                println!("{id} is open for an agent to pick up: `susi-tools tasks brief {id}`");
+                return Ok(());
+            }
             let mut claim = vec!["tasks".to_owned(), "claim".to_owned(), id];
             for scope in &o.scopes {
                 claim.push("--scope".into());
@@ -434,6 +473,43 @@ fn run(args: &[String]) -> Result<(), Failure> {
             }
             claim.extend(common);
             run(&claim)
+        }
+        ["tasks", "brief", ..] => {
+            let o = parse(rest, &[])?;
+            let repo = o.repo()?;
+            let id = o.one_id("tasks brief")?;
+            let board = o.board(&repo).ok();
+            let (record, repository) = tasks::find(&repo, board.as_ref(), &id)?;
+            let vision = record.text("vision");
+            let words = match (&board, vision.is_empty()) {
+                (Some(board), false) => tasks::vision_statement(board, &vision).ok(),
+                _ => None,
+            };
+            print!("{}", tasks::brief(&record, &repository, words.as_deref()));
+            Ok(())
+        }
+        ["tasks", "next", ..] => {
+            let o = parse(rest, &[])?;
+            let repo = o.repo()?;
+            let agent = agent::name(o.agent.as_deref(), &repo)?;
+            let main = tasks::fetch_main(&repo, REMOTE)?;
+            let open = tasks::open_records(&repo, &main)?;
+            let claims = claims::State::read(&repo, REMOTE)?;
+            let Some(task) = tasks::next(&open, &claims, &agent, time::now_unix()) else {
+                println!("no open task for {agent} at {REMOTE}'s main: every one is claimed, waits on another, or is meant for another agent");
+                return Ok(());
+            };
+            let board = o.board(&repo).ok();
+            let vision = task.record.text("vision");
+            let words = match (&board, vision.is_empty()) {
+                (Some(board), false) => tasks::vision_statement(board, &vision).ok(),
+                _ => None,
+            };
+            print!(
+                "{}",
+                tasks::brief(&task.record, &tasks::repo_name(&repo), words.as_deref())
+            );
+            Ok(())
         }
         ["tasks", "finish", ..] => {
             let o = parse(rest, &[])?;
@@ -451,6 +527,15 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let repo = o.repo()?;
             let agent = agent::name(o.agent.as_deref(), &repo)?;
             let id = o.one_id("tasks claim")?;
+            // Without --scope, the paths the task's record names (a task made by `tasks add`).
+            let scopes = if o.scopes.is_empty() {
+                let board = o.board(&repo).ok();
+                tasks::find(&repo, board.as_ref(), &id)
+                    .map(|(record, _)| record.str_list("scope"))
+                    .unwrap_or_default()
+            } else {
+                o.scopes.clone()
+            };
             let branch = repo
                 .try_read(&["symbolic-ref", "--short", "-q", "HEAD"])
                 .map(|b| b.trim().to_owned())
@@ -463,7 +548,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                 &claims::Request {
                     task: &id,
                     agent: &agent,
-                    scopes: &o.scopes,
+                    scopes: &scopes,
                     hours: o.hours.unwrap_or(claims::DEFAULT_HOURS),
                     branch: &branch,
                     queue: queue.as_ref(),

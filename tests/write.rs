@@ -117,6 +117,13 @@ fn template() -> &'static Path {
         )
         .unwrap();
         std::fs::write(root.join("seed/README"), "seed\n").unwrap();
+        let visions = root.join("seed/.agents/visions");
+        std::fs::create_dir_all(&visions).unwrap();
+        std::fs::write(
+            visions.join("V-1.json"),
+            r#"{"schema":"susi.vision/v1","id":"V-1","statement":"build what sells","set_by":"ceo"}"#,
+        )
+        .unwrap();
         std::fs::write(root.join("seed/.susi-repo-role"), "private-commercial\n").unwrap();
         let seed = root.join("seed");
         git_in(&config, &seed, &["add", "-A"]);
@@ -596,6 +603,8 @@ fn a_number_hidden_behind_a_merge_is_still_used() {
             "s",
             "--scope",
             "src",
+            "--vision",
+            "V-1",
         ],
     );
     assert!(out.contains("added T-ALPHA-8"), "{out}");
@@ -626,6 +635,8 @@ fn a_started_task_takes_a_number_never_used_before() {
             "s",
             "--scope",
             "src",
+            "--vision",
+            "V-1",
         ],
     );
     assert!(out.contains("added T-ALPHA-6"), "{out}");
@@ -640,7 +651,7 @@ fn a_started_task_takes_a_number_never_used_before() {
     fx.refused(
         "alpha",
         &[
-            "tasks", "start", "Bad", "--accept", "rm -rf .", "--scope", "docs",
+            "tasks", "start", "Bad", "--accept", "rm -rf .", "--scope", "docs", "--vision", "V-1",
         ],
         "runs `cargo` or a repository script",
     );
@@ -698,6 +709,8 @@ fn start_and_finish_are_one_command_each() {
             "src",
             "--size",
             "s",
+            "--vision",
+            "V-1",
         ],
     );
     assert!(
@@ -1226,6 +1239,8 @@ fn a_clone_that_ships_for_landing_pushes_to_its_agent_ref_and_claims_its_own_rec
             "cargo --version",
             "--scope",
             "src",
+            "--vision",
+            "V-1",
         ],
     );
     assert!(
@@ -1300,4 +1315,160 @@ fn a_host_does_not_land_work_that_main_has_moved_past() {
     assert!(said.contains("main moved on"), "{said}");
     assert_eq!(fx.origin_ref("refs/heads/main"), main);
     assert!(last_item(&fx).contains("Not landed: main moved past"));
+}
+
+#[test]
+fn a_task_names_a_vision_the_ceo_set_on_main() {
+    let fx = Fx::new("vision");
+    let alpha = fx.clone_of("alpha");
+    let start = |vision: Option<&str>| {
+        let mut args = vec![
+            "tasks",
+            "start",
+            "Serve a vision",
+            "--accept",
+            "cargo --version",
+            "--scope",
+            "src",
+            "--size",
+            "s",
+        ];
+        if let Some(v) = vision {
+            args.extend(["--vision", v]);
+        }
+        fx.tool("alpha", &args)
+    };
+    let (code, _, err) = start(None);
+    assert!(
+        code == 2 && err.contains("needs --vision"),
+        "a task without a vision is a usage error: {code} {err}"
+    );
+    let (code, _, err) = start(Some("V-9"));
+    assert!(
+        code == 1 && err.contains("V-9 is not a vision on Susi's main"),
+        "{code} {err}"
+    );
+    let (code, _, err) = start(Some("nine"));
+    assert!(code == 1 && err.contains("--vision V-<n>"), "{code} {err}");
+    // A vision committed here but not on main is not one the CEO set yet.
+    std::fs::write(
+        alpha.join(".agents/visions/V-2.json"),
+        r#"{"id":"V-2","statement":"only local"}"#,
+    )
+    .unwrap();
+    fx.git(&alpha, &["add", "-A"]);
+    fx.git(&alpha, &["commit", "-q", "-m", "a local vision"]);
+    let (code, _, err) = start(Some("V-2"));
+    assert!(
+        code == 1 && err.contains("V-2 is not a vision"),
+        "{code} {err}"
+    );
+    fx.git(&alpha, &["reset", "-q", "--hard", "HEAD~1"]);
+
+    let out = fx.ok(
+        "alpha",
+        &[
+            "tasks",
+            "start",
+            "Serve a vision",
+            "--accept",
+            "cargo --version",
+            "--scope",
+            "src",
+            "--size",
+            "s",
+            "--vision",
+            "V-1",
+            "--rung",
+            "built",
+        ],
+    );
+    assert!(out.contains("added T-ALPHA-1"), "{out}");
+    let record = std::fs::read_to_string(alpha.join(".agents/tasks/T-ALPHA-1.json")).unwrap();
+    assert!(record.contains("\"vision\": \"V-1\""), "{record}");
+    assert!(record.contains("\"rung\": \"built\""), "{record}");
+    let listed = fx.ok("alpha", &["tasks", "list"]);
+    assert!(
+        listed
+            .lines()
+            .any(|l| l.contains("T-ALPHA-1") && l.contains("V-1")),
+        "{listed}"
+    );
+}
+
+#[test]
+fn the_lead_adds_a_task_and_another_agent_works_from_its_brief_alone() {
+    let fx = Fx::new("brief");
+    let beta = fx.clone_of("beta");
+    let out = fx.ok(
+        "alpha",
+        &[
+            "tasks",
+            "add",
+            "Write the page",
+            "--accept",
+            "cargo --version",
+            "--scope",
+            "src/page.rs",
+            "--scope",
+            "tests/page.rs",
+            "--read",
+            "docs/seam.md",
+            "--vision",
+            "V-1",
+            "--for",
+            "beta",
+            "--goal",
+            "the page the seam describes",
+            "--size",
+            "s",
+        ],
+    );
+    assert!(
+        out.contains("added T-ALPHA-1") && out.contains("shipped"),
+        "{out}"
+    );
+    assert!(
+        fx.origin_ref("refs/claims/T-ALPHA-1").is_none(),
+        "adding claims nothing"
+    );
+    let record = fx.origin_blob("refs/heads/main:.agents/tasks/T-ALPHA-1.json");
+    assert!(record.contains("\"for\": \"beta\""), "{record}");
+
+    // Meant for beta: alpha's next is another task, beta's is this one, with all it needs.
+    let alphas = fx.ok("alpha", &["tasks", "next"]);
+    assert!(!alphas.contains("T-ALPHA-1"), "{alphas}");
+    let next = fx.ok("beta", &["tasks", "next"]);
+    for part in [
+        "Task T-ALPHA-1: Write the page",
+        "For: beta.",
+        "V-1, in the CEO's words: \"build what sells\"",
+        "Goal: the page the seam describes",
+        "Change only: src/page.rs, tests/page.rs",
+        "Read first: docs/seam.md",
+        "Done when this passes: cargo --version",
+        "susi-tools tasks claim T-ALPHA-1",
+        "Task: T-ALPHA-1",
+        "susi-tools tasks finish T-ALPHA-1",
+    ] {
+        assert!(next.contains(part), "{part:?} missing from:\n{next}");
+    }
+    // The brief is the same by id, from a clone that has not pulled the record yet.
+    let brief = fx.ok("beta", &["tasks", "brief", "T-ALPHA-1"]);
+    assert_eq!(brief, next);
+
+    // Claimed with no --scope: the record's paths.
+    fx.git(&beta, &["pull", "-q", "--ff-only"]);
+    let claimed = fx.ok("beta", &["tasks", "claim", "T-ALPHA-1"]);
+    assert!(claimed.contains("claimed T-ALPHA-1"), "{claimed}");
+    let claim = fx.origin_blob("refs/claims/T-ALPHA-1");
+    assert!(
+        claim.contains("src/page.rs") && claim.contains("tests/page.rs"),
+        "{claim}"
+    );
+    let after = fx.ok("beta", &["tasks", "next"]);
+    assert!(
+        !after.contains("T-ALPHA-1"),
+        "a claimed task is not next: {after}"
+    );
 }

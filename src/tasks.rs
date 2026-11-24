@@ -131,6 +131,51 @@ pub struct NewTask<'a> {
     pub accept: &'a [String],
     pub deps: &'a [String],
     pub agent: &'a str,
+    /// The vision it serves (`V-<n>`), checked on Susi's `main` before the record is written.
+    pub vision: &'a str,
+    /// The rung of the brick ladder it moves, when it moves one.
+    pub rung: &'a str,
+    /// The paths it may change: the scope its claim takes.
+    pub scope: &'a [String],
+    /// What to read before starting: the seam.
+    pub read: &'a [String],
+    /// The agent it is meant for, or empty for anyone.
+    pub for_agent: &'a str,
+}
+
+/// The rungs of the brick ladder (Susi's `AGENTS.md`, "Walking the two tracks").
+pub const RUNGS: [&str; 5] = ["built", "used", "ready", "released", "delivered"];
+
+/// Where Susi keeps the CEO's visions, each `V-<n>.json` with its `statement`.
+pub const VISIONS_DIR: &str = ".agents/visions/";
+
+/// A vision's id has its shape: `V-` and a number.
+pub fn vision_id(id: &str) -> Result<(), String> {
+    match id.strip_prefix("V-") {
+        Some(n) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => Ok(()),
+        _ => Err(format!(
+            "a task names the vision it serves: --vision V-<n>, one of Susi's .agents/visions, not {id:?}"
+        )),
+    }
+}
+
+/// The CEO's words for vision `id`, read from Susi's `main` as the remote has it (`board` is the
+/// Susi clone, which holds the visions as it holds the Board): a task serves a vision the CEO
+/// set, not one only a checkout knows.
+pub fn vision_statement(board: &Repo, id: &str) -> Result<String, String> {
+    vision_id(id)?;
+    let main = fetch_main(board, "origin")?;
+    let blob = board
+        .try_read(&["cat-file", "blob", &format!("{main}:{VISIONS_DIR}{id}.json")])
+        .ok_or_else(|| {
+            format!("{id} is not a vision on Susi's main ({VISIONS_DIR}{id}.json): record it there, ship it, then name it")
+        })?;
+    let record = json::parse(&blob).map_err(|e| format!("{id}: the vision is not JSON: {e}"))?;
+    let statement = record.text("statement");
+    if statement.trim().is_empty() {
+        return Err(format!("{id}: the vision states nothing"));
+    }
+    Ok(statement)
 }
 
 /// Acceptance runs on whoever closes the task, so it is `cargo …` or a script of the repository.
@@ -163,19 +208,41 @@ pub fn add(repo: &Repo, new: &NewTask<'_>) -> Result<(String, std::path::PathBuf
         return Err("size is xs, s, m or l".into());
     }
     safe_accept(new.accept)?;
+    vision_id(new.vision)?;
+    if !new.rung.is_empty() && !RUNGS.contains(&new.rung) {
+        return Err(format!("a rung is one of {}", RUNGS.join(", ")));
+    }
+    if new.scope.is_empty() {
+        return Err("name the paths the task may change: --scope <path> (repeatable)".into());
+    }
+    let for_agent = if new.for_agent.is_empty() {
+        String::new()
+    } else {
+        crate::agent::token(new.for_agent)?;
+        new.for_agent.trim().to_ascii_lowercase()
+    };
     let token = crate::agent::token(new.agent)?;
     let stem = format!("T-{token}-");
     let next = used_numbers(repo, &stem)?.into_iter().max().unwrap_or(0) + 1;
     let id = format!("{stem}{next}");
-    let record = Json::Object(vec![
+    let strings = |list: &[String]| Json::Array(list.iter().cloned().map(Json::Str).collect());
+    let mut fields = vec![
         ("id".into(), Json::Str(id.clone())),
         ("title".into(), Json::Str(new.title.trim().into())),
         ("goal".into(), Json::Str(new.goal.into())),
+        ("vision".into(), Json::Str(new.vision.into())),
+    ];
+    if !new.rung.is_empty() {
+        fields.push(("rung".into(), Json::Str(new.rung.into())));
+    }
+    if !for_agent.is_empty() {
+        fields.push(("for".into(), Json::Str(for_agent)));
+    }
+    fields.extend([
         ("size".into(), Json::Str(new.size.into())),
-        (
-            "deps".into(),
-            Json::Array(new.deps.iter().cloned().map(Json::Str).collect()),
-        ),
+        ("deps".into(), strings(new.deps)),
+        ("scope".into(), strings(new.scope)),
+        ("read".into(), strings(new.read)),
         (
             "accept".into(),
             Json::Object(vec![(
@@ -189,6 +256,7 @@ pub fn add(repo: &Repo, new: &NewTask<'_>) -> Result<(String, std::path::PathBuf
             Json::Number(crate::time::now_unix().to_string()),
         ),
     ]);
+    let record = Json::Object(fields);
     let path = repo.work_tree()?.join(TASKS_DIR).join(format!("{id}.json"));
     if path.exists() {
         return Err(format!("{} already exists", path.display()));
@@ -240,4 +308,129 @@ pub fn close(repo: &Repo, id: &str) -> Result<String, String> {
     repo.run_visible(&["commit", "--quiet", "-m", &message])?;
     repo.read(&["rev-parse", "HEAD"])
         .map(|s| s.trim().to_owned())
+}
+
+/// The open task `id`'s record: in this checkout, on this repository's `main` as the remote has
+/// it, or, for a task of Susi's queue worked on in Susi Tools, on Susi's `main` (`board`). With
+/// the record, the name of the repository whose queue holds it.
+pub fn find(repo: &Repo, board: Option<&Repo>, id: &str) -> Result<(Json, String), String> {
+    let rel = format!("{TASKS_DIR}{id}.json");
+    let parse = |text: &str| json::parse(text).map_err(|e| format!("{rel} is not JSON: {e}"));
+    if let Ok(text) = std::fs::read_to_string(repo.work_tree()?.join(&rel)) {
+        return Ok((parse(&text)?, repo_name(repo)));
+    }
+    let mut places = vec![repo];
+    places.extend(board.filter(|b| b.git_dir() != repo.git_dir()));
+    for place in places {
+        let main = fetch_main(place, "origin")?;
+        if let Some(text) = place.try_read(&["cat-file", "blob", &format!("{main}:{rel}")]) {
+            return Ok((parse(&text)?, repo_name(place)));
+        }
+    }
+    Err(format!("{id} is not an open task here or on Susi's main"))
+}
+
+/// A repository's name, from its `origin` (`susi`, `susi-tools`).
+pub fn repo_name(repo: &Repo) -> String {
+    let url = repo
+        .try_read(&["config", "--get", "remote.origin.url"])
+        .unwrap_or_default();
+    let last = url
+        .trim()
+        .trim_end_matches('/')
+        .rsplit(['/', '\\', ':'])
+        .next()
+        .unwrap_or_default();
+    let name = last.strip_suffix(".git").unwrap_or(last);
+    if name.is_empty() {
+        "this repository".to_owned()
+    } else {
+        name.to_owned()
+    }
+}
+
+/// The first open task for `agent`: unclaimed or its claim lapsed, every task it depends on
+/// closed, and meant for `agent` or for anyone. Tasks meant for `agent` come first.
+pub fn next<'a>(
+    open: &'a [OpenTask],
+    claims: &crate::claims::State,
+    agent: &str,
+    now: i64,
+) -> Option<&'a OpenTask> {
+    let me = crate::agent::token(agent).unwrap_or_default();
+    let free = |t: &&OpenTask| {
+        claims.on_task(&t.id).is_none_or(|(_, _, c)| !c.live(now))
+            && t.record
+                .str_list("deps")
+                .iter()
+                .all(|dep| open.iter().all(|o| &o.id != dep))
+    };
+    let meant = |t: &OpenTask| crate::agent::token(&t.record.text("for")).unwrap_or_default();
+    open.iter()
+        .filter(free)
+        .find(|t| meant(t) == me)
+        .or_else(|| open.iter().filter(free).find(|t| meant(t).is_empty()))
+}
+
+/// The words to give an agent so it can do task `id` from nothing: why (the vision, in the
+/// CEO's words), what, where, what to read first, when it is done, and the loop that lands it.
+pub fn brief(record: &Json, repository: &str, vision: Option<&str>) -> String {
+    let id = record.text("id");
+    let list = |key: &str| {
+        let items = record.str_list(key);
+        if items.is_empty() {
+            "(none named)".to_owned()
+        } else {
+            items.join(", ")
+        }
+    };
+    let mut out = format!("Task {id}: {}\n", record.text("title"));
+    let meant = record.text("for");
+    out.push_str(&format!(
+        "For: {}. Repository: {repository} (your own clone of it, in your agent root).\n",
+        if meant.is_empty() {
+            "any agent"
+        } else {
+            &meant
+        }
+    ));
+    match (record.text("vision").as_str(), vision) {
+        ("", _) => out.push_str("Why: this task names no vision (it was made before V-48).\n"),
+        (v, Some(words)) => out.push_str(&format!("Why: {v}, in the CEO's words: \"{words}\"\n")),
+        (v, None) => out.push_str(&format!("Why: {v} (Susi's .agents/visions/{v}.json).\n")),
+    }
+    let rung = record.text("rung");
+    if !rung.is_empty() {
+        out.push_str(&format!("It moves its brick to the rung: {rung}.\n"));
+    }
+    let goal = record.text("goal");
+    if !goal.trim().is_empty() {
+        out.push_str(&format!("Goal: {}\n", goal.trim()));
+    }
+    out.push_str(&format!("Change only: {}\n", list("scope")));
+    out.push_str(&format!("Read first: {}\n", list("read")));
+    out.push_str(&format!(
+        "Done when this passes: {}\n",
+        accept_cmd(record).join(" ")
+    ));
+    let deps = record.str_list("deps");
+    if !deps.is_empty() {
+        out.push_str(&format!("After: {} (closed first)\n", deps.join(", ")));
+    }
+    out.push_str(&format!(
+        "\nHow: Susi's contract, AGENTS.md in your Susi clone (\"Working here\"), is the rule; in short:
+1. In your agent root (~/susi-agents/<you>, its env.sh sourced: your own SUSI_HOME and build
+   target), make a worktree of {repository} from origin/main and run `susi-tools workflow check`.
+2. Claim the task there: `susi-tools tasks claim {id}` (it takes the paths above).
+3. Look before you build: reuse what exists; a task of size m or l records where you looked in
+   its `reuse` field, committed alone first.
+4. Make the check pass, changing only those paths; commit small, each message ending with the
+   trailer `Task: {id}`.
+5. Run the gates as AGENTS.md gives them, inside the 10-second line, then `susi-tools ship`, and
+   read what it prints for you; when main has moved, merge it, test, ship again.
+6. `susi-tools tasks finish {id}`, then remove your worktree.
+7. Report: what you built, the commits, the check's tests, the gates' time, and anything not done.
+"
+    ));
+    out
 }
