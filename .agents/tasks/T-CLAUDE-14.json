@@ -1,0 +1,31 @@
+{
+  "id": "T-CLAUDE-14",
+  "title": "Gates report code copied from elsewhere",
+  "goal": "susi-tools gates reports, beside its gates and without failing any, every block of 12 or more consecutive lines that the work not yet on main adds (lines added since the merge base of HEAD and refs/susi-tools/remote/main) to a tracked Rust source outside any tests/ directory, where the same block (lines compared with leading and trailing white space removed, blank lines dropped) is already elsewhere in the repository's tracked Rust sources outside tests/; it prints each with both places as path:line, or 'copies: none'. Put it in src/gates/copies.rs, a module of gates.rs (main.rs is another agent's this hour). tests/copies.rs: a 40-line function copied into a second file is reported with both places; a copied block of 11 lines is not; a copy under tests/ is not. Inside the line: under 0.5 s on Susi's checkout. The README says what gates reports.",
+  "vision": "V-48",
+  "for": "codex",
+  "size": "s",
+  "deps": [],
+  "scope": [
+    "src/gates.rs",
+    "src/gates",
+    "tests/copies.rs",
+    "README.md"
+  ],
+  "read": [
+    "docs/agents-together.md in your Susi clone (piece 4)",
+    "src/gates.rs"
+  ],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--test",
+      "copies"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795533776
+}
