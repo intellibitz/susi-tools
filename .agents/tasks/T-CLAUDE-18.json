@@ -1,0 +1,26 @@
+{
+  "id": "T-CLAUDE-18",
+  "title": "The lead's bearings list the foundation's tasks apart",
+  "goal": "",
+  "vision": "V-49",
+  "size": "xs",
+  "deps": [],
+  "scope": [
+    "src/lead.rs",
+    "tests/write.rs",
+    "README.md"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--test",
+      "write"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795539056
+}
