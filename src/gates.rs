@@ -21,6 +21,8 @@ use std::time::Instant;
 
 use crate::speed::{featured_packages, LINE_SECONDS};
 
+mod copies;
+
 /// One gate's result.
 pub struct Gate {
     pub name: String,
@@ -35,6 +37,7 @@ pub struct Gate {
 pub struct Outcome {
     pub gates: Vec<Gate>,
     pub seconds: f64,
+    copies: String,
 }
 
 impl Outcome {
@@ -77,6 +80,7 @@ impl Outcome {
                 self.seconds
             ));
         }
+        out.push_str(&self.copies);
         out
     }
 }
@@ -236,9 +240,11 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
             .flat_map(|h| h.join().unwrap_or_default())
             .collect::<Vec<Gate>>()
     });
+    let copies = copies::report(work);
     Ok(Outcome {
         gates,
         seconds: started.elapsed().as_secs_f64(),
+        copies,
     })
 }
 

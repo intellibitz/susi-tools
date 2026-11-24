@@ -114,6 +114,10 @@ Board, tasks and claims); the rules below are this repository's own.
     output, and says plainly when the whole run is over the 10-second line
     (the CEO, 2026-11-24: "a non negotiable mandate would be 10s"). On Susi:
     6.7 s, against 14.3 s one after another.
+    It also reports each 12-or-more-line block newly added to a Rust source
+    that repeats code elsewhere outside `tests/`, as `copies: path:line and
+    path:line`; when there are none it prints `copies: none`. This report is
+    advisory and does not change whether a gate passes.
   - **The public firewall:** a public repository is pushed only through the
     firewall Susi keeps, named by `git config susi.publicFirewall <path>`: its
     pre-push hook runs the script on every push, as a server's pre-receive
