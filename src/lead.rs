@@ -3,8 +3,9 @@
 //! talking to leads that session, holding the lead's claim, one ref on the Board's repository
 //! (`refs/lead/current`), so two sessions never both lead. `susi-tools lead` gives a lead its
 //! bearings in one command: who leads, the brick map (`.agents/bricks.json` on main) with each
-//! brick's rung, next step and tasks, what waits on the CEO, the visions placed nowhere, the
-//! open tasks no brick names, and what the Board addressed to it.
+//! brick's rung, next step and tasks, the foundation's tasks (for the whole, no one brick's),
+//! what waits on the CEO, the visions placed nowhere, the open tasks the map names nowhere, and
+//! what the Board addressed to it.
 
 use crate::git::{PushOutcome, Repo, Update};
 use crate::json::{self, Json};
@@ -250,6 +251,22 @@ pub fn bearings(board: &Repo, remote: &str, agent: &str) -> Result<String, Strin
         named_tasks.extend(tasks);
         placed.extend(strings(brick.get("visions")));
     }
+    // Tasks for the whole, no one brick's: the toolchain, a rename, the tooling, the documents.
+    let foundation = strings(map.get("foundation"));
+    if !foundation.is_empty() {
+        let shown: Vec<String> = foundation
+            .iter()
+            .map(|id| {
+                if open.iter().any(|t| &t.id == id) {
+                    format!("{id} (open)")
+                } else {
+                    format!("{id} (closed)")
+                }
+            })
+            .collect();
+        out.push_str(&format!("foundation: {}\n", shown.join(", ")));
+    }
+    named_tasks.extend(foundation);
     if !waits.is_empty() {
         out.push_str("waits on the CEO:\n");
         for line in waits {

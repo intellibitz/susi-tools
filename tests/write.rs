@@ -1582,7 +1582,7 @@ fn the_lead_is_a_role_any_agent_takes() {
     let alpha = fx.clone_of("alpha");
     std::fs::write(
         alpha.join(".agents/bricks.json"),
-        r#"{"schema":"susi.bricks/v1","rules":[],"bricks":[{"name":"vault","title":"The vault","visions":["V-1"],"sold_as":"SKU-V","rung":"built","state":"on main","next":"ship it to a customer","tasks":["T-A-1","T-A-9"],"waits_on_ceo":"its price"}]}"#,
+        r#"{"schema":"susi.bricks/v1","rules":[],"bricks":[{"name":"vault","title":"The vault","visions":["V-1"],"sold_as":"SKU-V","rung":"built","state":"on main","next":"ship it to a customer","tasks":["T-A-1","T-A-9"],"waits_on_ceo":"its price"}],"foundation":["T-A-3"]}"#,
     )
     .unwrap();
     std::fs::write(
@@ -1605,14 +1605,21 @@ fn the_lead_is_a_role_any_agent_takes() {
         "waits on the CEO:",
         "vault: its price",
         "visions placed nowhere (a brick's or the rules'): V-2",
+        "foundation: T-A-3 (open)",
         "open tasks no brick names:",
-        "T-A-2",
+        "  T-A-2 ",
     ] {
         assert!(
             bearings.contains(part),
             "{part:?} missing from:\n{bearings}"
         );
     }
+
+    let strays = bearings.split("open tasks no brick names:").nth(1).unwrap();
+    assert!(
+        !strays.contains("T-A-3"),
+        "a foundation task is no stray:\n{bearings}"
+    );
 
     let out = fx.ok("alpha", &["lead", "claim"]);
     assert!(out.contains("ALPHA leads until unix"), "{out}");
