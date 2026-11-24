@@ -1,0 +1,19 @@
+{
+  "id": "T-CLAUDE-12",
+  "title": "Tasks carry their vision and brief: add, brief, next",
+  "goal": "",
+  "size": "s",
+  "deps": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--test",
+      "write"
+    ]
+  },
+  "created_by": "CLAUDE",
+  "created_unix": 1795533523
+}
