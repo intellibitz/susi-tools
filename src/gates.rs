@@ -3,17 +3,20 @@
 //! it would be treated high priority and fixed immediately"). Run one after another, Susi's gates
 //! took 14.3 s; side by side, 6.6 s.
 //!
-//! Three lanes run at once:
+//! Three lanes run at once, each in its own build folder (Cargo lets one build at a time use a
+//! folder, so steps sharing one across lanes waited on each other):
 //! - the whole suite (`cargo nextest run --workspace`);
 //! - when packages have features, the suite of those packages with `--no-default-features` (the
-//!   program a customer is sold, in Susi). Only they change with it; every other package compiles
-//!   the same and is already tested in the first lane. It builds in its own target folder,
-//!   `<target>/no-default-features`, so the two builds never overwrite each other's binaries (they
-//!   did, and a test then ran the wrong program);
-//! - the lints: `cargo fmt --check`, Clippy for both builds, and Clippy for every `--target` named,
-//!   for both builds, with `SUSI_CROSS_CHECK=1` (Susi's switch for its Windows runtime's
-//!   native-only build script); without default features, only for the packages that have
-//!   features, as their tests (after an edit to a deep crate, Susi's gates took 9.3 s; so, 8.4).
+//!   program a customer is sold, in Susi), then their Clippy and their Clippy for every `--target`
+//!   named. Only they change with it; every other package compiles the same and is already tested
+//!   in the first lane. It builds in its own target folder, `<target>/no-default-features`, so the
+//!   two builds never overwrite each other's binaries (they did, and a test then ran the wrong
+//!   program); its lints were in the third lane until Susi's lints lane took 10.3 s after a change
+//!   with a new test, over the line, beside a suite of 9.4 s;
+//! - the lints: `cargo fmt --check`, Clippy, and Clippy for every `--target` named, with
+//!   `SUSI_CROSS_CHECK=1` (Susi's switch for its Windows runtime's native-only build script);
+//!   without default features, only for the packages that have features, as their tests (after
+//!   an edit to a deep crate, Susi's gates took 9.3 s; so, 8.4).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -112,8 +115,40 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
     let base = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| work.join("target"));
-    let customer = base.join("no-default-features");
     let featured = featured_packages(work);
+    let lanes = lanes(&base, featured.as_deref(), targets);
+    let started = Instant::now();
+    let gates: Vec<Gate> = std::thread::scope(|scope| {
+        let handles: Vec<_> = lanes
+            .iter()
+            .map(|lane| {
+                scope.spawn(move || {
+                    lane.iter()
+                        .map(|s| run_step(work, s))
+                        .collect::<Vec<Gate>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap_or_default())
+            .collect::<Vec<Gate>>()
+    });
+    let copies = copies::report(work);
+    Ok(Outcome {
+        gates,
+        seconds: started.elapsed().as_secs_f64(),
+        copies,
+    })
+}
+
+/// The three lanes of steps, run side by side, each keeping to its own build folder, since Cargo
+/// lets one build at a time use a folder and steps sharing one across lanes wait on each other:
+/// the whole suite; the customer build's suite and lints, in `<base>/no-default-features`, its
+/// suite first; and the lints of the first build. `featured` is the packages that have features
+/// (`Some(&[])` when they could not be named, `None` for none).
+fn lanes(base: &Path, featured: Option<&[String]>, targets: &[String]) -> [Vec<Step>; 3] {
+    let customer = base.join("no-default-features");
     let clippy = [
         "clippy",
         "--workspace",
@@ -135,7 +170,7 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
     // they could not be named).
     let customer_clippy = |extra: &[&str]| -> Vec<String> {
         let mut args = vec!["clippy".to_owned()];
-        match &featured {
+        match featured {
             Some(packages) if !packages.is_empty() => {
                 for package in packages {
                     args.extend(["-p".to_owned(), package.clone()]);
@@ -177,7 +212,7 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
         target: None,
         cross: false,
     });
-    if let Some(packages) = &featured {
+    if let Some(packages) = featured {
         let mut args = vec![
             "nextest",
             "run",
@@ -198,7 +233,7 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
             target: Some(customer.clone()),
             cross: false,
         });
-        lints.push(Step {
+        customer_tests.push(Step {
             name: "clippy, no default features",
             args: customer_clippy(&[]),
             target: Some(customer.clone()),
@@ -213,7 +248,7 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
             cross: true,
         });
         if featured.is_some() {
-            lints.push(Step {
+            customer_tests.push(Step {
                 name: "clippy, every product target, no default features",
                 args: customer_clippy(&cross_refs),
                 target: Some(customer.clone()),
@@ -222,30 +257,7 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
         }
     }
 
-    let started = Instant::now();
-    let lanes = [tests, customer_tests, lints];
-    let gates: Vec<Gate> = std::thread::scope(|scope| {
-        let handles: Vec<_> = lanes
-            .iter()
-            .map(|lane| {
-                scope.spawn(move || {
-                    lane.iter()
-                        .map(|s| run_step(work, s))
-                        .collect::<Vec<Gate>>()
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .flat_map(|h| h.join().unwrap_or_default())
-            .collect::<Vec<Gate>>()
-    });
-    let copies = copies::report(work);
-    Ok(Outcome {
-        gates,
-        seconds: started.elapsed().as_secs_f64(),
-        copies,
-    })
+    [tests, customer_tests, lints]
 }
 
 fn run_step(work: &Path, step: &Step) -> Gate {
@@ -288,5 +300,55 @@ fn run_step(work: &Path, step: &Step) -> Gate {
         seconds: started.elapsed().as_secs_f64(),
         ok,
         tail,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Cargo lets one build at a time use a target folder (its "file lock on build directory"),
+    /// so two steps sharing one in different lanes wait on each other, and the lanes' lengths
+    /// add up. In Susi, after a change with a new test, the lints lane took 10.3 s, over the
+    /// 10-second line, while the suite took 9.4 s, because it also held the customer build's two
+    /// lints, which build in the customer's folder. So every step building in that folder runs in
+    /// the customer's lane, after its tests, and no step of another lane builds there.
+    #[test]
+    fn the_customer_folder_s_steps_run_in_its_own_lane() {
+        let base = Path::new("/target");
+        let customer = base.join("no-default-features");
+        let featured = vec!["susi-commercial".to_owned()];
+        let targets = vec!["x86_64-pc-windows-msvc".to_owned()];
+        let [tests, customer_lane, lints] = lanes(base, Some(&featured), &targets);
+        let names = |lane: &[Step]| lane.iter().map(|s| s.name).collect::<Vec<_>>();
+        assert_eq!(
+            names(&customer_lane),
+            [
+                "tests, no default features",
+                "clippy, no default features",
+                "clippy, every product target, no default features"
+            ]
+        );
+        assert!(customer_lane
+            .iter()
+            .all(|s| s.target.as_deref() == Some(customer.as_path())));
+        for lane in [&tests, &lints] {
+            assert!(
+                lane.iter().all(|s| s.target.is_none()),
+                "{:?} builds in the customer's folder",
+                names(lane)
+            );
+        }
+        assert_eq!(
+            names(&lints),
+            ["format", "clippy", "clippy, every product target"]
+        );
+        // Without packages that have features, there is no customer lane.
+        let [_, customer_lane, lints] = lanes(base, None, &targets);
+        assert!(customer_lane.is_empty());
+        assert_eq!(
+            names(&lints),
+            ["format", "clippy", "clippy, every product target"]
+        );
     }
 }
