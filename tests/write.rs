@@ -917,6 +917,42 @@ fn the_session_check_fast_forwards_and_shows_what_is_addressed_to_you() {
 }
 
 #[test]
+fn ship_prints_a_heads_up_to_you_once() {
+    let fx = Fx::new("hear");
+    fx.ok("alpha", &["tasks", "claim", "T-A-1", "--scope", "src"]);
+    fx.ok(
+        "beta",
+        &[
+            "board",
+            "post",
+            "--kind",
+            "heads-up",
+            "--title",
+            "look at this",
+            "--to",
+            "alpha",
+        ],
+    );
+    let check = fx.ok("alpha", &["workflow", "check"]);
+    assert!(
+        check.contains("for you since your last item:") && check.contains("look at this"),
+        "{check}"
+    );
+    commit_work(&fx, "alpha", "src/lib.rs", "T-A-1");
+    let first = fx.ok("alpha", &["ship"]);
+    assert!(
+        first.contains("for you since your last item:") && first.contains("look at this"),
+        "{first}"
+    );
+    commit_work(&fx, "alpha", "src/more.rs", "T-A-1");
+    let second = fx.ok("alpha", &["ship"]);
+    assert!(
+        !second.contains("look at this") && !second.contains("for you since your last item:"),
+        "{second}"
+    );
+}
+
+#[test]
 fn work_in_a_public_repository_posts_to_the_agent_roots_susi_board() {
     let fx = Fx::new("public");
     let root = fx.root.join("agents/alpha");
