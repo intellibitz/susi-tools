@@ -66,8 +66,8 @@ Speed
                                  format, Clippy, Clippy per target), side by side, inside the line
 Harvested code: the second program, local-harvest audit [--range <A..B>] | notices [--check]
 The session start
-  susi-tools workflow check      fast-forward a clean checkout, show what is addressed to you,
-                                 say what you hold
+  susi-tools workflow check      fast-forward a clean checkout, show unanswered requests and
+                                 Board items addressed to you since your last item, say what you hold
 The Git hooks of Susi and Susi Tools: each .githooks/<stage> is one line that runs
   susi-tools hook pre-commit | commit-msg <file> | pre-push <remote> [url]
                   | post-checkout <old> <new> <flag>
@@ -88,7 +88,8 @@ What each writes: board post creates one numbered item; claim and release change
 refs in one atomic push (claiming a task you hold again renews it); start commits the new
 task's record and ships it, then claims; close runs the task's acceptance and, only if it
 passes, commits the record's removal; ship pushes your committed work to main as a
-fast-forward, posts Landed and renews your claim. list writes nothing.
+fast-forward, posts Landed, prints Board items addressed to you since your last item,
+and renews your claim. list writes nothing.
 ";
 
 fn main() -> ExitCode {
@@ -626,6 +627,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
                             task: shipped.first().map(String::as_str),
                         },
                     )?;
+                    check::print_for_you_since_last(&board, REMOTE, &agent)?;
                     if backup::spawn(&repo, remote, &to) {
                         println!(
                             "backing up to {} in the background (.git/susi-backup.log)",

@@ -387,7 +387,7 @@ pub fn brief(record: &Json, repository: &str, vision: Option<&str>) -> String {
     let mut out = format!("Task {id}: {}\n", record.text("title"));
     let meant = record.text("for");
     out.push_str(&format!(
-        "For: {}. Repository: {repository} (your own clone of it, in your agent root).\n",
+        "For: {}. Repository: {repository} (your own clone of it, in your agent root; Susi's clone\n  sits in the folder susi-commercial-apps).\n",
         if meant.is_empty() {
             "any agent"
         } else {
@@ -426,8 +426,10 @@ pub fn brief(record: &Json, repository: &str, vision: Option<&str>) -> String {
    its `reuse` field, committed alone first.
 4. Make the check pass, changing only those paths; commit small, each message ending with the
    trailer `Task: {id}`.
-5. Run the gates as AGENTS.md gives them, inside the 10-second line, then `susi-tools ship`, and
-   read what it prints for you; when main has moved, merge it, test, ship again.
+5. Run the gates, inside the 10-second line: in Susi, the command AGENTS.md gives (\"Working
+   here\", step 6, with its five --target flags); in Susi Tools, `susi-tools gates` alone (it is
+   built for Linux only). Then `susi-tools ship`, and read what it prints for you; when main has
+   moved, merge it, test, ship again.
 6. `susi-tools tasks finish {id}`, then remove your worktree.
 7. Report: what you built, the commits, the check's tests, the gates' time, and anything not done.
 "
