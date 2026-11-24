@@ -938,18 +938,80 @@ fn ship_prints_a_heads_up_to_you_once() {
         check.contains("for you since your last item:") && check.contains("look at this"),
         "{check}"
     );
+    // Shown once: the ship after the check does not show it again (T-CLAUDE-16).
     commit_work(&fx, "alpha", "src/lib.rs", "T-A-1");
     let first = fx.ok("alpha", &["ship"]);
-    assert!(
-        first.contains("for you since your last item:") && first.contains("look at this"),
-        "{first}"
+    assert!(!first.contains("look at this"), "{first}");
+    fx.ok(
+        "beta",
+        &[
+            "board",
+            "post",
+            "--kind",
+            "heads-up",
+            "--title",
+            "and at this",
+            "--to",
+            "alpha",
+        ],
     );
     commit_work(&fx, "alpha", "src/more.rs", "T-A-1");
     let second = fx.ok("alpha", &["ship"]);
     assert!(
-        !second.contains("look at this") && !second.contains("for you since your last item:"),
+        second.contains("for you since your last item:") && second.contains("and at this"),
         "{second}"
     );
+    commit_work(&fx, "alpha", "src/last.rs", "T-A-1");
+    let third = fx.ok("alpha", &["ship"]);
+    assert!(
+        !third.contains("and at this") && !third.contains("for you since your last item:"),
+        "{third}"
+    );
+}
+
+/// Codex's sequence on 2026-11-24: a heads-up, then its own claim on the Board, then its ship.
+/// The claim is the agent's own item; the heads-up still reaches the ship.
+#[test]
+fn a_heads_up_survives_the_agents_own_posts_before_its_ship() {
+    let fx = Fx::new("hearclaim");
+    fx.ok("alpha", &["tasks", "claim", "T-A-1", "--scope", "src"]);
+    fx.ok(
+        "beta",
+        &[
+            "board",
+            "post",
+            "--kind",
+            "heads-up",
+            "--title",
+            "mid-task word",
+            "--to",
+            "alpha",
+        ],
+    );
+    fx.ok(
+        "alpha",
+        &[
+            "tasks", "claim", "T-A-1", "--scope", "src", "--scope", "docs",
+        ],
+    );
+    fx.ok(
+        "alpha",
+        &[
+            "board",
+            "post",
+            "--kind",
+            "decision",
+            "--title",
+            "a note of mine",
+        ],
+    );
+    commit_work(&fx, "alpha", "src/lib.rs", "T-A-1");
+    let shipped = fx.ok("alpha", &["ship"]);
+    assert!(
+        shipped.contains("for you since your last item:") && shipped.contains("mid-task word"),
+        "{shipped}"
+    );
+    assert!(!shipped.contains("a note of mine"), "{shipped}");
 }
 
 #[test]

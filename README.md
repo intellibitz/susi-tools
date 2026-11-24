@@ -42,8 +42,11 @@ Board, tasks and claims); the rules below are this repository's own.
   - **Session start:** `workflow check` fast-forwards a clean checkout to the
     remote's `main`, lists requests addressed to you that you have not
     answered, prints every Board item addressed to you (any kind, its `to` your
-    name or token) posted after your last own item under `for you since your
-    last item:`, and says what you hold; `board check` does the Board part.
+    name or token) that this clone has not shown you yet, under `for you since
+    your last item:` (each is shown once, whatever you post in between: the
+    clone keeps the last number shown, `susi.boardshown-<you>`; the first time
+    it counts from your last Landed), and says what you hold; `board check`
+    does the Board part.
   - **Reads:** `board list`, `tasks list` (the open tasks on the remote's
     `main`, each with the vision it serves, and their claims, fetched
     first), `tasks brief <id>` (the words to give an agent so it can do a
@@ -69,8 +72,8 @@ Board, tasks and claims); the rules below are this repository's own.
     `tasks close` (runs the acceptance and, only if it passes, commits the
     record's removal), `tasks finish` (close, then ship) and `ship` (committed
     work only, a fast-forward of `main`, then Landed on the Board; then every
-    Board item addressed to you posted after your previous own item, under
-    `for you since your last item:`; renews your claim, or releases it when
+    Board item addressed to you not yet shown, as `workflow check` prints
+    them; renews your claim, or releases it when
     the ship closed its task). A task of Susi's
     queue (which holds the ecosystem's tasks and the Board) can claim files
     here: the claim is kept on the repository whose files it covers, and a ship there renews it while the task is open in Susi.

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The session-start check: bring a clean checkout up to the remote's `main`, show unanswered
-//! requests addressed to you, Board items addressed to you since you last posted, and what you
-//! hold. Ship prints the same since-last list after it posts Landed. It changes nothing but a
-//! fast-forward of a clean checkout.
+//! requests addressed to you, the Board items addressed to you that this clone has not shown
+//! you yet, and what you hold. Ship prints the same after it posts Landed. It changes nothing but
+//! a fast-forward of a clean checkout and the number of the last item shown, in the clone's
+//! config (`susi.boardshown-<you>`).
 
 use crate::board;
 use crate::git::Repo;
@@ -80,54 +81,84 @@ pub fn addressed<'a>(items: &'a [board::Item], agent: &str) -> Vec<&'a board::It
         .collect()
 }
 
-/// Items whose `to` is `agent` (name or token; any kind), posted after `agent`'s last own item.
-/// `before` is an own item to ignore as the cutoff (the Landed ship just posted).
-fn for_you_since_last<'a>(
+/// The config key under which a clone keeps the number of the last Board item it showed
+/// `agent`, so each item addressed to the agent is shown once, whatever the agent posts in
+/// between. Counting from the agent's last own item instead let a claim it made after a
+/// heads-up hide that heads-up from its next ship (Codex, Board 5149, 2026-11-24).
+fn shown_key(agent: &str) -> String {
+    let token = crate::agent::token(agent).unwrap_or_default();
+    format!("susi.boardshown-{}", token.to_ascii_lowercase())
+}
+
+/// Items whose `to` is `agent` (name or token; any kind) after `cutoff`, but not `own` (the
+/// Landed a ship just posted).
+fn for_you<'a>(
     items: &'a [board::Item],
     agent: &str,
-    before: Option<u64>,
+    cutoff: u64,
+    own: Option<u64>,
 ) -> Vec<&'a board::Item> {
     let me = agent.to_ascii_lowercase();
-    let token = crate::agent::token(agent).unwrap_or_default();
-    let token_lc = token.to_ascii_lowercase();
-    let last_own = items
-        .iter()
-        .rev()
-        .find(|item| by_agent(item, &me, &token) && before.is_none_or(|n| item.n < n))
-        .map(|item| item.n);
+    let token_lc = crate::agent::token(agent)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     items
         .iter()
-        .filter(|item| {
-            to_agent(item, &me, &token_lc)
-                && last_own.is_none_or(|n| item.n > n)
-                && before.is_none_or(|n| item.n < n)
-        })
+        .filter(|item| to_agent(item, &me, &token_lc) && item.n > cutoff && Some(item.n) != own)
         .collect()
 }
 
-fn print_for_you(items: &[board::Item], agent: &str, before: Option<u64>) {
-    let for_you = for_you_since_last(items, agent, before);
-    if for_you.is_empty() {
-        return;
+/// Prints what the Board addressed to `agent` that this clone has not shown it yet, then
+/// remembers `last`, the newest item read. The first time, it counts from the agent's last
+/// Landed item before `own`.
+fn show_for_you(
+    repo: &Repo,
+    items: &[board::Item],
+    last: u64,
+    agent: &str,
+    own: Option<u64>,
+) -> Result<(), String> {
+    let key = shown_key(agent);
+    let shown = repo
+        .try_read(&["config", "--get", &key])
+        .and_then(|n| n.trim().parse::<u64>().ok());
+    let me = agent.to_ascii_lowercase();
+    let token = crate::agent::token(agent).unwrap_or_default();
+    let cutoff = shown.unwrap_or_else(|| {
+        items
+            .iter()
+            .rev()
+            .find(|item| {
+                by_agent(item, &me, &token)
+                    && item.body.text("kind") == "landed"
+                    && Some(item.n) != own
+            })
+            .map_or(0, |item| item.n)
+    });
+    let new = for_you(items, agent, cutoff, own);
+    if !new.is_empty() {
+        println!("for you since your last item:");
+        for item in new {
+            println!("{}", board::line(item));
+        }
     }
-    println!("for you since your last item:");
-    for item in for_you {
-        println!("{}", board::line(item));
+    if last > cutoff {
+        repo.read(&["config", "--local", &key, &last.to_string()])?;
     }
+    Ok(())
 }
 
-/// After ship posts Landed: items addressed to `agent` since the own item before that Landed.
+/// After ship posts Landed: what the Board addressed to `agent` that this clone has not shown it.
 pub fn print_for_you_since_last(repo: &Repo, remote: &str, agent: &str) -> Result<(), String> {
-    let (items, _) = recent_items(repo, remote, LOOK_BACK)?;
+    let (items, last) = recent_items(repo, remote, LOOK_BACK)?;
     let me = agent.to_ascii_lowercase();
     let token = crate::agent::token(agent).unwrap_or_default();
     let landed = items
         .iter()
         .rev()
-        .find(|item| by_agent(item, &me, &token))
+        .find(|item| by_agent(item, &me, &token) && item.body.text("kind") == "landed")
         .map(|item| item.n);
-    print_for_you(&items, agent, landed);
-    Ok(())
+    show_for_you(repo, &items, last, agent, landed)
 }
 
 pub fn board_check(repo: &Repo, remote: &str, agent: &str) -> Result<(), String> {
@@ -142,8 +173,7 @@ pub fn board_check(repo: &Repo, remote: &str, agent: &str) -> Result<(), String>
             println!("{}", board::line(item));
         }
     }
-    print_for_you(&items, agent, None);
-    Ok(())
+    show_for_you(repo, &items, last, agent, None)
 }
 
 pub fn workflow_check(repo: &Repo, remote: &str, board: &Repo, agent: &str) -> Result<(), String> {
