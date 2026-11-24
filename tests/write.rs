@@ -1486,6 +1486,8 @@ fn the_lead_adds_a_task_and_another_agent_works_from_its_brief_alone() {
         "susi-tools tasks claim T-ALPHA-1",
         "Task: T-ALPHA-1",
         "susi-tools tasks finish T-ALPHA-1",
+        "in Susi Tools, `susi-tools gates` alone",
+        "the folder susi-commercial-apps",
     ] {
         assert!(next.contains(part), "{part:?} missing from:\n{next}");
     }
