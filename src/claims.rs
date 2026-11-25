@@ -67,11 +67,14 @@ impl Claim {
 }
 
 /// One fetch of the remote's `main` and every claim ref into this program's own namespace,
-/// made once per run (`Repo::fetch_once`) until this program pushes.
+/// made once per run (`Repo::fetch_once`) until this program pushes. `--refmap=` keeps Git from
+/// also moving the clone's own `refs/remotes/<remote>/main` as it fetches `main` (Git 2.43, a
+/// cloud VM's, did; a read must change nothing of the clone's, tests/read_only.rs).
 pub fn fetch(repo: &Repo, remote: &str) -> Result<(), String> {
     repo.fetch_once(&[
         "--no-tags",
         "--prune",
+        "--refmap=",
         remote,
         &format!("+refs/heads/main:{}", tasks::MAIN_SNAPSHOT),
         "+refs/claims/*:refs/susi-tools/remote/claims/*",
