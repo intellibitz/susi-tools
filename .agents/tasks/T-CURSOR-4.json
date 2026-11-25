@@ -1,0 +1,26 @@
+{
+  "id": "T-CURSOR-4",
+  "title": "Gates profile: leave nested gates and speed-cold out of Tools ship wall",
+  "goal": "Leave recursive gates/land and speed --cold tests out of profile.gates so Tools ship wall stays under 10s with margin under load; document cold-after-install apart.",
+  "vision": "V-45",
+  "size": "s",
+  "deps": [],
+  "scope": [
+    ".config/nextest.toml",
+    "README.md"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--bin",
+      "susi-tools",
+      "each_suite_takes_the_repository_s_profile_for_it"
+    ]
+  },
+  "created_by": "CURSOR",
+  "created_unix": 1795620533
+}
