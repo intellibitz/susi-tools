@@ -273,9 +273,21 @@ fn run_step(work: &Path, step: &Step) -> Gate {
     if step.cross {
         cmd.env("SUSI_CROSS_CHECK", "1");
     }
+    let threads = if step.args.first().map(String::as_str) == Some("nextest") {
+        let cores = std::thread::available_parallelism().map_or(1, usize::from);
+        test_threads(cores, std::env::var_os("NEXTEST_TEST_THREADS").as_deref())
+    } else {
+        None
+    };
+    if let Some(threads) = &threads {
+        cmd.env("NEXTEST_TEST_THREADS", threads);
+    }
     let mut command = format!("cargo {}", step.args.join(" "));
     if let Some(target) = &step.target {
         command = format!("CARGO_TARGET_DIR={} {command}", target.display());
+    }
+    if let Some(threads) = &threads {
+        command = format!("NEXTEST_TEST_THREADS={threads} {command}");
     }
     if step.cross {
         command = format!("SUSI_CROSS_CHECK=1 {command}");
@@ -303,9 +315,30 @@ fn run_step(work: &Path, step: &Step) -> Gate {
     }
 }
 
+/// The test threads a suite runs with on a machine of `cores`, unless `named` (the caller's
+/// `NEXTEST_TEST_THREADS`) says: twice the cores. Susi's tests wait on the programs they start
+/// (Git, its own program, stand-in agents) more than they compute, so as many threads as cores, as
+/// nextest gives, left those cores idle: on a cloud VM's 4 cores Susi's gates took 24.3 s with 4
+/// test threads, 18.4 s with 8 and 17.9 s with 16 (Susi's docs/speed.md, "The gates on a cloud
+/// VM's 4 cores"; T-CLOUDCLAUDE-1).
+fn test_threads(cores: usize, named: Option<&std::ffi::OsStr>) -> Option<String> {
+    match named {
+        Some(_) => None,
+        None => Some(cores.max(1).saturating_mul(2).to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_suite_gets_twice_the_cores_unless_told() {
+        assert_eq!(test_threads(4, None).as_deref(), Some("8"));
+        assert_eq!(test_threads(28, None).as_deref(), Some("56"));
+        assert_eq!(test_threads(0, None).as_deref(), Some("2"));
+        assert_eq!(test_threads(4, Some(std::ffi::OsStr::new("3"))), None);
+    }
 
     /// Cargo lets one build at a time use a target folder (its "file lock on build directory"),
     /// so two steps sharing one in different lanes wait on each other, and the lanes' lengths

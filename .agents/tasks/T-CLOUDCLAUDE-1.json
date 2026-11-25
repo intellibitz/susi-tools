@@ -16,8 +16,9 @@
       "run",
       "--offline",
       "--locked",
-      "--lib",
-      "gates"
+      "--bins",
+      "-E",
+      "test(/gates::/)"
     ]
   },
   "created_by": "CLOUDCLAUDE",
