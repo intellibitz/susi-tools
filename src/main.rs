@@ -834,8 +834,12 @@ fn run(args: &[String]) -> Result<(), Failure> {
                         }
                         (
                             "answer",
+                            // The gate time goes in the answer, not only the console line: a
+                            // reader on the Board cannot otherwise tell a slow commit from a
+                            // busy host, and on 2026-11-25 the lander refused at 11.1 s while
+                            // succeeding at 44.5 s in the same log (Susi's docs/speed.md).
                             format!(
-                                "Not landed: {} from {agent_ref}, {} failed",
+                                "Not landed: {} from {agent_ref}, {} failed in {seconds:.1} s",
                                 &tip[..12],
                                 names.join(", ")
                             ),
