@@ -502,6 +502,28 @@ fn commit_msg_wants_a_task_recorded_or_claimed_here_and_keeps_to_the_claim() {
     assert!(!outside.status.success());
     assert!(err(&outside).contains("docs/b.md"), "{}", err(&outside));
 
+    // A task recorded but not claimed keeps off paths another agent's live claim holds on
+    // another open task; its owner, and a claim on a task no longer open, stop nothing.
+    fx.git(&work, &["reset", "-q"]);
+    fx.git(&work, &["add", "src/a.rs"]);
+    fx.write(
+        ".agents/tasks/T-A-3.json",
+        r#"{"id":"T-A-3","size":"s","created_unix":1795000000}"#,
+    );
+    fx.claim("T-A-3", "alpha", &["src/"]);
+    let inside = run("feat: a\n\nTask: T-A-1\n", &[("SUSI_AGENT", "beta")]);
+    assert!(!inside.status.success());
+    assert!(
+        err(&inside).contains("src/a.rs is inside src/, which alpha claims for T-A-3"),
+        "{}",
+        err(&inside)
+    );
+    let owner = run("feat: a\n\nTask: T-A-1\n", &[("SUSI_AGENT", "alpha")]);
+    assert!(owner.status.success(), "{}", err(&owner));
+    std::fs::remove_file(work.join(".agents/tasks/T-A-3.json")).unwrap();
+    let closed = run("feat: a\n\nTask: T-A-1\n", &[("SUSI_AGENT", "beta")]);
+    assert!(closed.status.success(), "{}", err(&closed));
+
     // A commit of task records alone owes nothing.
     fx.git(&work, &["reset", "-q"]);
     fx.git(&work, &["add", ".agents/tasks/T-A-1.json"]);

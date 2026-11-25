@@ -150,8 +150,9 @@ Board, tasks and claims); the rules below are this repository's own.
     of 1 MiB or more, no secret-shaped line, no added `dbg!(`, identical
     `CLAUDE.md` and `GEMINI.md`, formatted Rust); `commit-msg` wants a subject
     that says what and a `Task:` trailer naming a task recorded or claimed on
-    that repository, whose claim is yours and covers every staged file, and a
-    reuse decision for a task of size `m` or `l`; `pre-push` lets through only
+    that repository, whose claim is yours and covers every staged file, no
+    staged file inside a live claim another agent holds on another open task,
+    and a reuse decision for a task of size `m` or `l`; `pre-push` lets through only
     `main` (forward only), `refs/agents/<name>`, `vX.Y.Z` tags (created once),
     the task queue's blobs and Board items (created once), and runs the public
     firewall for a public repository; `post-checkout` lists finished worktrees

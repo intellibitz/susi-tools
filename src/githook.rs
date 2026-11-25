@@ -676,7 +676,69 @@ fn commit_msg(repo: &Repo, message: &str) -> Result<(), Stop> {
             scope(id, &claim.scopes, &staged)?;
         }
     }
+    if let Some(me) = &me {
+        others_claims(repo, work, me, &tasks, &staged)?;
+    }
     hooks::reuse(work, &tasks)
+}
+
+/// No staged file lies inside a live claim another agent holds on another open task: a task
+/// recorded here but not claimed (its claim refused for that overlap) otherwise had nothing to
+/// keep its commit off their paths (cloud-claude's 186ccc85, inside cloud-antigravity's claim).
+fn others_claims(
+    repo: &Repo,
+    work: &std::path::Path,
+    me: &str,
+    tasks: &[String],
+    staged: &[String],
+) -> Result<(), Stop> {
+    let code: Vec<&String> = staged
+        .iter()
+        .filter(|p| !p.starts_with(".agents/tasks/"))
+        .collect();
+    if code.is_empty() {
+        return Ok(());
+    }
+    let Ok(refs) = repo.refs("refs/susi-tools/remote/claims/") else {
+        return Ok(());
+    };
+    let oids: Vec<String> = refs.iter().map(|(_, oid)| oid.clone()).collect();
+    let Ok(blobs) = repo.blobs(&oids) else {
+        return Ok(());
+    };
+    let now = crate::time::now_unix();
+    for ((name, _), blob) in refs.iter().zip(blobs) {
+        let Some(task) = name.strip_prefix("refs/susi-tools/remote/claims/") else {
+            continue;
+        };
+        let Some(claim) = blob.as_deref().and_then(crate::claims::Claim::parse) else {
+            continue;
+        };
+        let open = work
+            .join(".agents/tasks")
+            .join(format!("{task}.json"))
+            .is_file();
+        let theirs = crate::agent::token(&claim.agent).ok();
+        if !claim.live(now)
+            || !open
+            || tasks.iter().any(|t| t == task)
+            || theirs.as_deref().is_none_or(|t| t == me)
+        {
+            continue;
+        }
+        for path in &code {
+            if let Some(s) = claim.scopes.iter().find(|s| {
+                let s = s.trim_end_matches('/');
+                path.as_str() == s || path.starts_with(&format!("{s}/"))
+            }) {
+                return Err(Stop::Refused(format!(
+                    "❌ {path} is inside {s}, which {} claims for {task}: ask them on the Board, or wait until they finish.",
+                    claim.agent
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `T-<LETTERS AND DIGITS>-<digits>`.
