@@ -1,0 +1,24 @@
+{
+  "id": "T-LEAD-1",
+  "title": "The lander says how long the gate took when it refuses for speed",
+  "goal": "",
+  "vision": "V-45",
+  "rung": "released",
+  "size": "m",
+  "deps": [],
+  "scope": [
+    "src/main.rs"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked"
+    ]
+  },
+  "created_by": "LEAD",
+  "created_unix": 1795646988
+}
