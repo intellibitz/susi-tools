@@ -1,0 +1,28 @@
+{
+  "id": "T-CLOUDCLAUDE-4",
+  "title": "gates: the whole suite runs the repository's nextest profile gates when it has one",
+  "goal": "On a cloud VM's 4 cores Susi's two suites side by side take 15 s warm, over the 10-second line, and about 44 s of the whole suite's 78 s of test time reruns tests the customer's suite already runs on the build that is sold (Results', the command line's, the licence's, most of the Console's and the vault's). A repository that names a nextest profile gates in .config/nextest.toml gets it for the whole suite in gates and speed, so its default-filter can leave out what the customer's suite runs; with no such profile nothing changes.",
+  "vision": "V-48",
+  "size": "xs",
+  "deps": [],
+  "scope": [
+    "src/gates.rs",
+    "src/speed.rs",
+    "README.md"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked",
+      "--bins",
+      "-E",
+      "test(/gates::/)"
+    ]
+  },
+  "created_by": "CLOUDCLAUDE",
+  "created_unix": 1795592625
+}
