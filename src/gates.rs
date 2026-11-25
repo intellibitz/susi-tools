@@ -249,13 +249,7 @@ pub fn nextest_profile(work: &Path, name: &str) -> bool {
 
 /// Whole-suite nextest args (`--workspace`), with an optional profile. Shared with `speed`.
 pub fn whole_suite_args(profile: Option<&str>) -> Vec<String> {
-    let mut args = owned([
-        "nextest",
-        "run",
-        "--workspace",
-        "--offline",
-        "--locked",
-    ]);
+    let mut args = owned(["nextest", "run", "--workspace", "--offline", "--locked"]);
     if let Some(profile) = profile {
         args.extend(owned(["--profile", profile]));
     }
@@ -597,10 +591,7 @@ mod tests {
                 no_default: None,
             },
         );
-        assert_eq!(
-            tests[0].args,
-            whole_suite_args(Some("gates"))
-        );
+        assert_eq!(tests[0].args, whole_suite_args(Some("gates")));
         assert!(customer_lane
             .iter()
             .all(|s| !s.args.iter().any(|a| a == "--profile")));
