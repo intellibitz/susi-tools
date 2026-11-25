@@ -16,6 +16,8 @@
       "test",
       "--offline",
       "--locked",
+      "--bin",
+      "susi-tools",
       "gates::"
     ]
   },

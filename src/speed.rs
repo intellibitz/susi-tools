@@ -309,14 +309,14 @@ pub fn run(repo: &Repo, cfg: &Config<'_>) -> Result<Report, String> {
             ];
             let _ = run_cargo(&work, &warmup, None);
             // As the gates run it: with the repository's nextest profile `gates`, if it has one.
-            let mut args = vec!["nextest", "run", "--workspace", "--offline", "--locked"];
-            if crate::gates::nextest_profile(&work, crate::gates::GATES_PROFILE) {
-                args.extend(["--profile", crate::gates::GATES_PROFILE]);
-            }
+            let profile = crate::gates::nextest_profile(&work, crate::gates::GATES_PROFILE)
+                .then_some(crate::gates::GATES_PROFILE);
+            let args = crate::gates::whole_suite_args(profile);
+            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
             vec![measure_cargo(
-                &format!("cargo {}", args.join(" ")),
+                &format!("cargo {}", refs.join(" ")),
                 &work,
-                &args,
+                &refs,
                 None,
             )]
         });
@@ -325,26 +325,10 @@ pub fn run(repo: &Repo, cfg: &Config<'_>) -> Result<Report, String> {
                 return Vec::new();
             };
             // Only the packages with features change; built in their own target folder.
-            let mut args: Vec<String> = [
-                "nextest",
-                "run",
-                "--offline",
-                "--locked",
-                "--no-default-features",
-            ]
-            .iter()
-            .map(|a| (*a).to_owned())
-            .collect();
-            if packages.is_empty() {
-                args.push("--workspace".to_owned());
-            }
-            for package in packages {
-                args.extend(["-p".to_owned(), package.clone()]);
-            }
-            let profile = crate::gates::GATES_NO_DEFAULT_PROFILE;
-            if crate::gates::nextest_profile(&work, profile) {
-                args.extend(["--profile".to_owned(), profile.to_owned()]);
-            }
+            let profile =
+                crate::gates::nextest_profile(&work, crate::gates::GATES_NO_DEFAULT_PROFILE)
+                    .then_some(crate::gates::GATES_NO_DEFAULT_PROFILE);
+            let args = crate::gates::customer_suite_args(packages, profile);
             let refs: Vec<&str> = args.iter().map(String::as_str).collect();
             let mut warmup = refs.clone();
             warmup.push("--no-run");

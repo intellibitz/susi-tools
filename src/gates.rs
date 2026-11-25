@@ -116,17 +116,18 @@ impl Outcome {
         } else {
             "a gate failed"
         };
-        if !self.within_line() {
-            out.push_str(&format!(
-                "{verdict}, in {:.1} s: OVER the {LINE_SECONDS:.0}-second line, a defect of the highest priority; fix it before any other work (refused)\n",
-                self.seconds
-            ));
-        } else {
-            out.push_str(&format!(
+        let line = if self.within_line() {
+            format!(
                 "{verdict}, in {:.1} s, under the {LINE_SECONDS:.0}-second line\n",
                 self.seconds
-            ));
-        }
+            )
+        } else {
+            format!(
+                "{verdict}, in {:.1} s: OVER the {LINE_SECONDS:.0}-second line, a defect of the highest priority; fix it before any other work (refused)\n",
+                self.seconds
+            )
+        };
+        out.push_str(&line);
         out.push_str(&self.copies);
         out
     }
@@ -246,6 +247,81 @@ pub fn nextest_profile(work: &Path, name: &str) -> bool {
     })
 }
 
+/// Whole-suite nextest args (`--workspace`), with an optional profile. Shared with `speed`.
+pub fn whole_suite_args(profile: Option<&str>) -> Vec<String> {
+    let mut args = owned([
+        "nextest",
+        "run",
+        "--workspace",
+        "--offline",
+        "--locked",
+    ]);
+    if let Some(profile) = profile {
+        args.extend(owned(["--profile", profile]));
+    }
+    args
+}
+
+/// Customer-suite nextest args (`--no-default-features`), one `-p` per package (or `--workspace`
+/// when the list is empty). Shared with `speed`.
+pub fn customer_suite_args(packages: &[String], profile: Option<&str>) -> Vec<String> {
+    let mut args = owned([
+        "nextest",
+        "run",
+        "--offline",
+        "--locked",
+        "--no-default-features",
+    ]);
+    if packages.is_empty() {
+        args.push("--workspace".to_owned());
+    }
+    for package in packages {
+        args.extend(["-p".to_owned(), package.clone()]);
+    }
+    if let Some(profile) = profile {
+        args.extend(owned(["--profile", profile]));
+    }
+    args
+}
+
+fn owned<const N: usize>(args: [&str; N]) -> Vec<String> {
+    args.iter().map(|a| (*a).to_owned()).collect()
+}
+
+fn host_clippy_args(extra: &[&str]) -> Vec<String> {
+    let mut args = owned([
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--offline",
+        "--locked",
+    ]);
+    args.extend(extra.iter().map(|a| (*a).to_owned()));
+    args.extend(owned(["--", "-D", "warnings"]));
+    args
+}
+
+fn customer_clippy_args(packages: Option<&[String]>, extra: &[&str]) -> Vec<String> {
+    let mut args = vec!["clippy".to_owned()];
+    match packages {
+        Some(packages) if !packages.is_empty() => {
+            for package in packages {
+                args.extend(["-p".to_owned(), package.clone()]);
+            }
+        }
+        _ => args.push("--workspace".to_owned()),
+    }
+    args.extend(owned([
+        "--all-targets",
+        "--offline",
+        "--locked",
+        "--no-default-features",
+    ]));
+    args.extend(extra.iter().map(|a| (*a).to_owned()));
+    args.extend(owned(["--", "-D", "warnings"]));
+    args
+}
+
 /// The nextest profiles of the two suites, each when the repository names it.
 #[derive(Clone, Copy, Default)]
 struct Profiles<'a> {
@@ -267,94 +343,38 @@ fn plan(
     profiles: Profiles<'_>,
 ) -> Plan {
     let customer = base.join("no-default-features");
-    let clippy = [
-        "clippy",
-        "--workspace",
-        "--all-targets",
-        "--offline",
-        "--locked",
-    ];
-    let with = |extra: &[&str], tail: &[&str]| -> Vec<String> {
-        clippy
-            .iter()
-            .chain(extra)
-            .chain(tail)
-            .map(|a| (*a).to_owned())
-            .collect()
-    };
-    let deny = ["--", "-D", "warnings"];
-    let customer_clippy = |extra: &[&str]| -> Vec<String> {
-        let mut args = vec!["clippy".to_owned()];
-        match featured {
-            Some(packages) if !packages.is_empty() => {
-                for package in packages {
-                    args.extend(["-p".to_owned(), package.clone()]);
-                }
-            }
-            _ => args.push("--workspace".to_owned()),
-        }
-        args.extend(
-            [
-                "--all-targets",
-                "--offline",
-                "--locked",
-                "--no-default-features",
-            ]
-            .iter()
-            .chain(extra)
-            .chain(&deny)
-            .map(|a| (*a).to_owned()),
-        );
-        args
-    };
     let cross: Vec<String> = targets
         .iter()
         .flat_map(|t| ["--target".to_owned(), t.clone()])
         .collect();
     let cross_refs: Vec<&str> = cross.iter().map(String::as_str).collect();
 
-    let mut whole = vec!["nextest", "run", "--workspace", "--offline", "--locked"];
-    if let Some(profile) = profiles.whole {
-        whole.extend(["--profile", profile]);
-    }
-    let tests = vec![step("tests", &whole, None, false)];
+    let tests = vec![Step {
+        name: "tests",
+        args: whole_suite_args(profiles.whole),
+        target: None,
+        cross: false,
+    }];
     let mut customer_lane = Vec::new();
     let mut lints = vec![step("format", &["fmt", "--all", "--check"], None, false)];
     lints.push(Step {
         name: "clippy",
-        args: with(&[], &deny),
+        args: host_clippy_args(&[]),
         target: None,
         cross: false,
     });
     if let Some(packages) = featured {
-        let mut args = vec![
-            "nextest",
-            "run",
-            "--offline",
-            "--locked",
-            "--no-default-features",
-        ];
-        if packages.is_empty() {
-            args.push("--workspace");
-        }
-        let mut owned: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
-        for package in packages {
-            owned.extend(["-p".to_owned(), package.clone()]);
-        }
-        if let Some(profile) = profiles.no_default {
-            owned.extend(["--profile".to_owned(), profile.to_owned()]);
-        }
         // Suite then native Clippy in one folder: Clippy reuses the suite's build (T-CURSOR-3).
         // Product-target Clippy stays phase 2 so it cannot sum into the 10-second wall.
         customer_lane.push(Step {
             name: "tests, no default features",
-            args: owned,
+            args: customer_suite_args(packages, profiles.no_default),
             target: Some(customer.clone()),
             cross: false,
         });
         customer_lane.push(Step {
             name: "clippy, no default features",
-            args: customer_clippy(&[]),
+            args: customer_clippy_args(Some(packages), &[]),
             target: Some(customer.clone()),
             cross: false,
         });
@@ -364,14 +384,14 @@ fn plan(
     if !targets.is_empty() {
         cross_steps.push(Step {
             name: "clippy, every product target",
-            args: with(&cross_refs, &deny),
+            args: host_clippy_args(&cross_refs),
             target: None,
             cross: true,
         });
         if featured.is_some() {
             cross_steps.push(Step {
                 name: "clippy, every product target, no default features",
-                args: customer_clippy(&cross_refs),
+                args: customer_clippy_args(featured, &cross_refs),
                 target: Some(customer.clone()),
                 cross: true,
             });
@@ -425,8 +445,10 @@ fn run_step(work: &Path, step: &Step) -> Gate {
                 String::from_utf8_lossy(&out.stderr)
             );
             let lines: Vec<&str> = text.lines().collect();
-            let tail = lines[lines.len().saturating_sub(25)..].join("\n");
-            (out.status.success(), tail)
+            (
+                out.status.success(),
+                lines[lines.len().saturating_sub(25)..].join("\n"),
+            )
         }
         Err(e) => (false, format!("cargo does not start: {e}")),
     };
@@ -456,6 +478,25 @@ fn test_threads(cores: usize, named: Option<&std::ffi::OsStr>) -> Option<String>
 mod tests {
     use super::*;
 
+    fn ok_outcome(seconds: f64, cross_seconds: Option<f64>) -> Outcome {
+        Outcome {
+            gates: vec![Gate {
+                name: "tests".into(),
+                command: "cargo nextest".into(),
+                seconds: 1.0,
+                ok: true,
+                tail: String::new(),
+            }],
+            seconds,
+            cross_seconds,
+            copies: String::new(),
+        }
+    }
+
+    fn lane_names(lane: &[Step]) -> Vec<&str> {
+        lane.iter().map(|s| s.name).collect()
+    }
+
     #[test]
     fn each_suite_gets_twice_the_cores_unless_told() {
         assert_eq!(test_threads(4, None).as_deref(), Some("8"));
@@ -476,18 +517,17 @@ mod tests {
             line_lanes: [tests, customer_lane, lints],
             cross_steps,
         } = plan(base, Some(&featured), &targets, Profiles::default());
-        let names = |lane: &[Step]| lane.iter().map(|s| s.name).collect::<Vec<_>>();
         assert_eq!(
-            names(&customer_lane),
+            lane_names(&customer_lane),
             ["tests, no default features", "clippy, no default features"]
         );
         assert!(customer_lane
             .iter()
             .all(|s| s.target.as_deref() == Some(customer.as_path())));
-        assert_eq!(names(&lints), ["format", "clippy"]);
+        assert_eq!(lane_names(&lints), ["format", "clippy"]);
         assert!(tests.iter().all(|s| s.target.is_none()));
         assert_eq!(
-            cross_steps.iter().map(|s| s.name).collect::<Vec<_>>(),
+            lane_names(&cross_steps),
             [
                 "clippy, every product target",
                 "clippy, every product target, no default features"
@@ -501,32 +541,16 @@ mod tests {
             cross_steps,
         } = plan(base, None, &targets, Profiles::default());
         assert!(customer_lane.is_empty());
-        assert_eq!(names(&lints), ["format", "clippy"]);
-        assert_eq!(
-            cross_steps.iter().map(|s| s.name).collect::<Vec<_>>(),
-            ["clippy, every product target"]
-        );
+        assert_eq!(lane_names(&lints), ["format", "clippy"]);
+        assert_eq!(lane_names(&cross_steps), ["clippy, every product target"]);
     }
 
     /// Product-target Clippy does not count toward the 10-second line (T-CURSOR-2): cold rebuilds
     /// of five triples took 38–40.5 s; the measured gate set is phase 1 only.
     #[test]
     fn product_target_clippy_is_apart_from_the_ten_second_line() {
-        let under = Outcome {
-            gates: vec![Gate {
-                name: "tests".into(),
-                command: "cargo nextest".into(),
-                seconds: 1.0,
-                ok: true,
-                tail: String::new(),
-            }],
-            seconds: 6.0,
-            cross_seconds: Some(40.5),
-            copies: String::new(),
-        };
-        assert!(under.gates_ok());
-        assert!(under.within_line());
-        assert!(under.passed());
+        let under = ok_outcome(6.0, Some(40.5));
+        assert!(under.gates_ok() && under.within_line() && under.passed());
         let rendered = under.render(Path::new("."));
         assert!(rendered.contains("under the 10-second line"));
         assert!(rendered.contains("cross 40.5 s (apart from the 10-second line)"));
@@ -536,41 +560,15 @@ mod tests {
     /// print alone used to exit 0 and let a ship through.
     #[test]
     fn gates_refuse_a_run_over_the_ten_second_line() {
-        let under = Outcome {
-            gates: vec![Gate {
-                name: "tests".into(),
-                command: "cargo nextest".into(),
-                seconds: 1.0,
-                ok: true,
-                tail: String::new(),
-            }],
-            seconds: 9.9,
-            cross_seconds: None,
-            copies: String::new(),
-        };
-        assert!(under.gates_ok());
-        assert!(under.within_line());
-        assert!(under.passed());
+        let under = ok_outcome(9.9, None);
+        assert!(under.gates_ok() && under.within_line() && under.passed());
         assert!(under.failures().is_empty());
         assert!(under
             .render(Path::new("."))
             .contains("under the 10-second line"));
 
-        let over = Outcome {
-            gates: vec![Gate {
-                name: "tests".into(),
-                command: "cargo nextest".into(),
-                seconds: 11.0,
-                ok: true,
-                tail: String::new(),
-            }],
-            seconds: 11.0,
-            cross_seconds: Some(2.0),
-            copies: String::new(),
-        };
-        assert!(over.gates_ok());
-        assert!(!over.within_line());
-        assert!(!over.passed());
+        let over = ok_outcome(11.0, Some(2.0));
+        assert!(over.gates_ok() && !over.within_line() && !over.passed());
         let fails = over.failures();
         assert_eq!(fails.len(), 1);
         assert_eq!(fails[0].0, "speed");
@@ -587,42 +585,42 @@ mod tests {
     fn each_suite_takes_the_repository_s_profile_for_it() {
         let base = Path::new("/target");
         let featured = vec!["susi-commercial".to_owned()];
-        let whole = Profiles {
-            whole: Some("gates"),
-            no_default: None,
-        };
         let Plan {
             line_lanes: [tests, customer_lane, _],
             ..
-        } = plan(base, Some(&featured), &[], whole);
+        } = plan(
+            base,
+            Some(&featured),
+            &[],
+            Profiles {
+                whole: Some("gates"),
+                no_default: None,
+            },
+        );
         assert_eq!(
             tests[0].args,
-            [
-                "nextest",
-                "run",
-                "--workspace",
-                "--offline",
-                "--locked",
-                "--profile",
-                "gates"
-            ]
+            whole_suite_args(Some("gates"))
         );
         assert!(customer_lane
             .iter()
             .all(|s| !s.args.iter().any(|a| a == "--profile")));
-        let both = Profiles {
-            whole: None,
-            no_default: Some("gates-no-default-features"),
-        };
         let Plan {
             line_lanes: [tests, customer_lane, _],
             ..
-        } = plan(base, Some(&featured), &[], both);
-        assert!(!tests[0].args.iter().any(|a| a == "--profile"));
-        assert!(customer_lane[0].args.ends_with(&[
-            "--profile".to_owned(),
-            "gates-no-default-features".to_owned()
-        ]));
+        } = plan(
+            base,
+            Some(&featured),
+            &[],
+            Profiles {
+                whole: None,
+                no_default: Some("gates-no-default-features"),
+            },
+        );
+        assert_eq!(tests[0].args, whole_suite_args(None));
+        assert_eq!(
+            customer_lane[0].args,
+            customer_suite_args(&featured, Some("gates-no-default-features"))
+        );
         assert!(customer_lane[1..]
             .iter()
             .all(|s| !s.args.iter().any(|a| a == "--profile")));
