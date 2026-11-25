@@ -310,7 +310,7 @@ pub fn run(repo: &Repo, cfg: &Config<'_>) -> Result<Report, String> {
             let _ = run_cargo(&work, &warmup, None);
             // As the gates run it: with the repository's nextest profile `gates`, if it has one.
             let mut args = vec!["nextest", "run", "--workspace", "--offline", "--locked"];
-            if crate::gates::gates_profile(&work) {
+            if crate::gates::nextest_profile(&work, crate::gates::GATES_PROFILE) {
                 args.extend(["--profile", crate::gates::GATES_PROFILE]);
             }
             vec![measure_cargo(
@@ -340,6 +340,10 @@ pub fn run(repo: &Repo, cfg: &Config<'_>) -> Result<Report, String> {
             }
             for package in packages {
                 args.extend(["-p".to_owned(), package.clone()]);
+            }
+            let profile = crate::gates::GATES_NO_DEFAULT_PROFILE;
+            if crate::gates::nextest_profile(&work, profile) {
+                args.extend(["--profile".to_owned(), profile.to_owned()]);
             }
             let refs: Vec<&str> = args.iter().map(String::as_str).collect();
             let mut warmup = refs.clone();

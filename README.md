@@ -128,7 +128,8 @@ Board, tasks and claims); the rules below are this repository's own.
     profile `gates` when its `.config/nextest.toml` names one (its
     `default-filter` can leave out the tests the other suite runs again, so
     each runs once; `speed` times it so too); the suite of the packages that have
-    features, with `--no-default-features`, in its own target folder
+    features, with `--no-default-features` (and the profile
+    `gates-no-default-features` when the repository names one), in its own target folder
     (`<target>/no-default-features`, so the two builds never overwrite each
     other's binaries); and the lints (`cargo fmt --check`, Clippy for both
     builds, and Clippy for every `--target` for both builds, with
