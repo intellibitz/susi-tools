@@ -658,6 +658,40 @@ fn a_started_task_takes_a_number_never_used_before() {
 }
 
 #[test]
+fn a_task_its_own_agent_already_has_open_is_not_added_twice() {
+    let fx = Fx::new("dup");
+    let start = |title: &'static str, scope: &'static str| {
+        [
+            "tasks",
+            "start",
+            title,
+            "--accept",
+            "cargo test",
+            "--scope",
+            scope,
+            "--vision",
+            "V-1",
+        ]
+    };
+    let out = fx.ok("alpha", &start("Write the thing", "src/a"));
+    assert!(out.contains("added T-ALPHA-1"), "{out}");
+    fx.ok("alpha", &["tasks", "release", "T-ALPHA-1"]);
+    // The same title again, spaced and cased otherwise: refused, naming the open one.
+    fx.refused(
+        "alpha",
+        &start("write  the Thing", "src/b"),
+        "already has `write  the Thing` open as T-ALPHA-1",
+    );
+    // Another agent may name a task the same.
+    fx.git(
+        &fx.clone_of("beta"),
+        &["pull", "-q", "--ff-only", "origin", "main"],
+    );
+    let out = fx.ok("beta", &start("Write the thing", "src/c"));
+    assert!(out.contains("added T-BETA-1"), "{out}");
+}
+
+#[test]
 fn close_commits_only_when_the_acceptance_passes() {
     let fx = Fx::new("close");
     let alpha = fx.clone_of("alpha");

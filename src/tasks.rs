@@ -262,6 +262,40 @@ fn safe_accept(cmd: &[String]) -> Result<(), String> {
     }
 }
 
+/// A title as two titles are compared: lower-cased, its words single-spaced.
+fn title_key(title: &str) -> String {
+    title
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The open task `token`'s agent made with the title `title`, in this checkout or at origin's
+/// `main` as last fetched (Board 7099: one agent registering one title twice left two open
+/// copies, and every agent paid for the wrong one from `tasks next`). Another agent's task of the
+/// same title is not one.
+fn duplicate(repo: &Repo, token: &str, title: &str) -> Result<Option<String>, String> {
+    let wanted = title_key(title);
+    let mut places = vec!["HEAD".to_owned()];
+    if repo
+        .try_read(&["rev-parse", "--verify", "--quiet", MAIN_SNAPSHOT])
+        .is_some()
+    {
+        places.push(MAIN_SNAPSHOT.to_owned());
+    }
+    for at in places {
+        for task in open_records(repo, &at).unwrap_or_default() {
+            let by = task.record.get("created_by").and_then(Json::as_str);
+            let named = task.record.get("title").and_then(Json::as_str);
+            if by == Some(token) && named.is_some_and(|t| title_key(t) == wanted) {
+                return Ok(Some(task.id));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Write a new task record into the checkout and return its id and path; `tasks start` commits
 /// it. Nothing else is changed.
 pub fn add(repo: &Repo, new: &NewTask<'_>) -> Result<(String, std::path::PathBuf), String> {
@@ -286,6 +320,12 @@ pub fn add(repo: &Repo, new: &NewTask<'_>) -> Result<(String, std::path::PathBuf
         new.for_agent.trim().to_ascii_lowercase()
     };
     let token = crate::agent::token(new.agent)?;
+    if let Some(id) = duplicate(repo, &token, new.title)? {
+        return Err(format!(
+            "{token} already has `{}` open as {id}: claim it (susi-tools tasks claim {id}) rather than add it again",
+            new.title.trim()
+        ));
+    }
     let stem = format!("T-{token}-");
     let next = used_numbers(repo, &stem)?.into_iter().max().unwrap_or(0) + 1;
     let id = format!("{stem}{next}");
