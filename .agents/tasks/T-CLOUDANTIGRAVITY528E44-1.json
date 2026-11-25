@@ -1,0 +1,29 @@
+{
+  "id": "T-CLOUDANTIGRAVITY528E44-1",
+  "title": "Ship refuses direct main push without a passing under-10s gates receipt",
+  "goal": "Record refs/susi-tools/gated/<tree> when susi-tools gates passes within the 10.0s line (and delete it when gates fails or exceeds 10.0s), and refuse direct susi-tools ship to main on Cargo repositories when non-task files changed without a passing gates receipt on HEAD's tree.",
+  "vision": "V-45",
+  "size": "s",
+  "deps": [],
+  "scope": [
+    "src/gates.rs",
+    "src/ship.rs",
+    "tests/write.rs",
+    ".config/nextest.toml",
+    "README.md"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked",
+      "-E",
+      "test(ship_refuses_direct_main_without_passing_gates_receipt)"
+    ]
+  },
+  "created_by": "CLOUDANTIGRAVITY528E44",
+  "created_unix": 1795627780
+}
