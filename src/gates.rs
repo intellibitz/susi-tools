@@ -5,7 +5,10 @@
 //!
 //! Three lanes run at once, each in its own build folder (Cargo lets one build at a time use a
 //! folder, so steps sharing one across lanes waited on each other):
-//! - the whole suite (`cargo nextest run --workspace`);
+//! - the whole suite (`cargo nextest run --workspace`), with the repository's nextest profile
+//!   `gates` when `.config/nextest.toml` names one (`gates_profile`): its `default-filter` can
+//!   leave out the tests the customer build's suite runs again, so each runs once (Susi's took
+//!   15 s on a cloud VM's 4 cores, 9.4 s so);
 //! - when packages have features, the suite of those packages with `--no-default-features` (the
 //!   program a customer is sold, in Susi), then their Clippy and their Clippy for every `--target`
 //!   named. Only they change with it; every other package compiles the same and is already tested
@@ -116,7 +119,12 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
         .map(PathBuf::from)
         .unwrap_or_else(|| work.join("target"));
     let featured = featured_packages(work);
-    let lanes = lanes(&base, featured.as_deref(), targets);
+    let lanes = lanes(
+        &base,
+        featured.as_deref(),
+        targets,
+        gates_profile(work).then_some(GATES_PROFILE),
+    );
     let started = Instant::now();
     let gates: Vec<Gate> = std::thread::scope(|scope| {
         let handles: Vec<_> = lanes
@@ -142,12 +150,29 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
     })
 }
 
+/// The nextest profile the whole suite runs with in the gates, when the repository names it.
+pub const GATES_PROFILE: &str = "gates";
+
+/// Whether the repository's nextest settings (`.config/nextest.toml`) name the profile `gates`.
+pub fn gates_profile(work: &Path) -> bool {
+    std::fs::read_to_string(work.join(".config/nextest.toml")).is_ok_and(|text| {
+        text.lines()
+            .any(|l| l.trim() == format!("[profile.{GATES_PROFILE}]"))
+    })
+}
+
 /// The three lanes of steps, run side by side, each keeping to its own build folder, since Cargo
 /// lets one build at a time use a folder and steps sharing one across lanes wait on each other:
 /// the whole suite; the customer build's suite and lints, in `<base>/no-default-features`, its
 /// suite first; and the lints of the first build. `featured` is the packages that have features
-/// (`Some(&[])` when they could not be named, `None` for none).
-fn lanes(base: &Path, featured: Option<&[String]>, targets: &[String]) -> [Vec<Step>; 3] {
+/// (`Some(&[])` when they could not be named, `None` for none); `profile` the nextest profile of
+/// the whole suite, if any.
+fn lanes(
+    base: &Path,
+    featured: Option<&[String]>,
+    targets: &[String],
+    profile: Option<&str>,
+) -> [Vec<Step>; 3] {
     let customer = base.join("no-default-features");
     let clippy = [
         "clippy",
@@ -198,12 +223,11 @@ fn lanes(base: &Path, featured: Option<&[String]>, targets: &[String]) -> [Vec<S
         .collect();
     let cross_refs: Vec<&str> = cross.iter().map(String::as_str).collect();
 
-    let tests = vec![step(
-        "tests",
-        &["nextest", "run", "--workspace", "--offline", "--locked"],
-        None,
-        false,
-    )];
+    let mut whole = vec!["nextest", "run", "--workspace", "--offline", "--locked"];
+    if let Some(profile) = profile {
+        whole.extend(["--profile", profile]);
+    }
+    let tests = vec![step("tests", &whole, None, false)];
     let mut customer_tests = Vec::new();
     let mut lints = vec![step("format", &["fmt", "--all", "--check"], None, false)];
     lints.push(Step {
@@ -352,7 +376,7 @@ mod tests {
         let customer = base.join("no-default-features");
         let featured = vec!["susi-commercial".to_owned()];
         let targets = vec!["x86_64-pc-windows-msvc".to_owned()];
-        let [tests, customer_lane, lints] = lanes(base, Some(&featured), &targets);
+        let [tests, customer_lane, lints] = lanes(base, Some(&featured), &targets, None);
         let names = |lane: &[Step]| lane.iter().map(|s| s.name).collect::<Vec<_>>();
         assert_eq!(
             names(&customer_lane),
@@ -377,11 +401,56 @@ mod tests {
             ["format", "clippy", "clippy, every product target"]
         );
         // Without packages that have features, there is no customer lane.
-        let [_, customer_lane, lints] = lanes(base, None, &targets);
+        let [_, customer_lane, lints] = lanes(base, None, &targets, None);
         assert!(customer_lane.is_empty());
         assert_eq!(
             names(&lints),
             ["format", "clippy", "clippy, every product target"]
         );
+    }
+
+    /// A repository's nextest profile `gates` is the whole suite's, and only its; without one
+    /// the whole suite runs as it always did.
+    #[test]
+    fn the_whole_suite_takes_the_repository_s_gates_profile() {
+        let base = Path::new("/target");
+        let featured = vec!["susi-commercial".to_owned()];
+        let [tests, customer_lane, _] = lanes(base, Some(&featured), &[], Some("gates"));
+        assert_eq!(
+            tests[0].args,
+            [
+                "nextest",
+                "run",
+                "--workspace",
+                "--offline",
+                "--locked",
+                "--profile",
+                "gates"
+            ]
+        );
+        assert!(customer_lane
+            .iter()
+            .all(|s| !s.args.iter().any(|a| a == "--profile")));
+        let [tests, _, _] = lanes(base, Some(&featured), &[], None);
+        assert!(!tests[0].args.iter().any(|a| a == "--profile"));
+
+        let dir =
+            std::env::temp_dir().join(format!("susi-tools-gates-profile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".config")).unwrap();
+        assert!(!gates_profile(&dir));
+        std::fs::write(
+            dir.join(".config/nextest.toml"),
+            "[[profile.default.overrides]]\nfilter = \"test(a)\"\n[profile.gatesish]\n",
+        )
+        .unwrap();
+        assert!(!gates_profile(&dir));
+        std::fs::write(
+            dir.join(".config/nextest.toml"),
+            "[profile.gates]\ndefault-filter = \"not test(a)\"\n",
+        )
+        .unwrap();
+        assert!(gates_profile(&dir));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

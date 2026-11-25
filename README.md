@@ -124,7 +124,10 @@ Board, tasks and claims); the rules below are this repository's own.
     where it is and its agent is told on the Board, once a commit (the CEO,
     2026-11-24: "Company host lands it").
   - **Gates:** `gates [--target <triple>]...` runs every gate before a ship in
-    three lanes at once: the whole suite; the suite of the packages that have
+    three lanes at once: the whole suite, with the repository's nextest
+    profile `gates` when its `.config/nextest.toml` names one (its
+    `default-filter` can leave out the tests the other suite runs again, so
+    each runs once; `speed` times it so too); the suite of the packages that have
     features, with `--no-default-features`, in its own target folder
     (`<target>/no-default-features`, so the two builds never overwrite each
     other's binaries); and the lints (`cargo fmt --check`, Clippy for both

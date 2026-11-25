@@ -308,10 +308,15 @@ pub fn run(repo: &Repo, cfg: &Config<'_>) -> Result<Report, String> {
                 "--no-run",
             ];
             let _ = run_cargo(&work, &warmup, None);
+            // As the gates run it: with the repository's nextest profile `gates`, if it has one.
+            let mut args = vec!["nextest", "run", "--workspace", "--offline", "--locked"];
+            if crate::gates::gates_profile(&work) {
+                args.extend(["--profile", crate::gates::GATES_PROFILE]);
+            }
             vec![measure_cargo(
-                "cargo nextest run --workspace --offline --locked",
+                &format!("cargo {}", args.join(" ")),
                 &work,
-                &["nextest", "run", "--workspace", "--offline", "--locked"],
+                &args,
                 None,
             )]
         });
