@@ -1,0 +1,27 @@
+{
+  "id": "T-CLOUDCLAUDE-2",
+  "title": "tasks: --accept is split as a shell splits it, quotes kept together",
+  "goal": "A task's acceptance given to tasks start or tasks add as one line was split at every space, quotes and all, so a nextest filter such as -E 'package(x) | binary_id(y)' became a broken check (T-CLOUDCLAUDE-9, 11 to 14 had to be mended by hand). Split it as a shell would: single quotes literal, double quotes with backslash escapes, an unclosed quote refused.",
+  "vision": "V-48",
+  "size": "xs",
+  "deps": [],
+  "scope": [
+    "src/main.rs",
+    "src/tasks.rs"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked",
+      "--bins",
+      "-E",
+      "test(/tasks::/)"
+    ]
+  },
+  "created_by": "CLOUDCLAUDE",
+  "created_unix": 1795586925
+}
