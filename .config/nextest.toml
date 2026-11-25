@@ -1,0 +1,13 @@
+# The ship wall (`susi-tools gates`) uses profile `gates` when this file names it.
+# Nested gates/land and `speed --cold` inflate the wall under load (17 s after
+# cargo install at load ~70; warm alone 4–5 s). They stay on default/accept.
+# docs/speed.md in Susi (T-CURSOR-4).
+[profile.gates]
+default-filter = """
+not (
+  test(speed_cold_json_reports_apart_and_keeps_agent_target)
+  | test(speed_table_times_every_operation_including_features)
+  | test(gates_run_every_gate_side_by_side_and_name_the_one_that_fails)
+  | test(a_host_lands_what_passes_its_gates_and_tells_once_what_does_not)
+)
+"""

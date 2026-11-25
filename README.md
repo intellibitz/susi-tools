@@ -123,21 +123,18 @@ Board, tasks and claims); the rules below are this repository's own.
     on the Board; work whose gates fail, or that `main` has moved past, stays
     where it is and its agent is told on the Board, once a commit (the CEO,
     2026-11-24: "Company host lands it").
-  - **Gates:** `gates [--target <triple>]...` runs every gate before a ship in
-    three lanes at once: the whole suite, with the repository's nextest
-    profile `gates` when its `.config/nextest.toml` names one (its
-    `default-filter` can leave out the tests the other suite runs again, so
-    each runs once; `speed` times it so too); the suite of the packages that have
-    features, with `--no-default-features` (and the profile
-    `gates-no-default-features` when the repository names one), in its own target folder
-    (`<target>/no-default-features`, so the two builds never overwrite each
-    other's binaries); and the lints (`cargo fmt --check`, Clippy for both
-    builds, and Clippy for every `--target` for both builds, with
-    `SUSI_CROSS_CHECK=1`; without default features only for the packages that
-    have features, since nothing else changes). It names each gate's time and the failing one's
-    output, and says plainly when the whole run is over the 10-second line
-    (the CEO, 2026-11-24: "a non negotiable mandate would be 10s"). On Susi:
-    6.7 s, against 14.3 s one after another.
+  - **Gates:** `gates [--target <triple>]...` runs every gate before a ship.
+    **Phase 1** (the 10-second line, refused when over) is three lanes: the
+    whole suite with nextest profile `gates` when `.config/nextest.toml` names
+    one; the featured packages' suite then native Clippy with
+    `--no-default-features` in `<target>/no-default-features`; and host
+    `fmt` + Clippy. This repository's `gates` profile leaves nested
+    gates/land and `speed --cold` out of the ship wall (they stay on
+    default/accept; T-CURSOR-4). **Phase 2** (apart): Clippy for every
+    `--target` with `SUSI_CROSS_CHECK=1`, must pass, wall printed separately
+    (cold five-triple rebuilds took 38–40 s; T-CURSOR-2). It names each
+    gate's time and refuses when phase 1 is over the 10-second line (the CEO,
+    2026-11-24: "a non negotiable mandate would be 10s").
     It also reports each 12-or-more-line block newly added to a Rust source
     that repeats code elsewhere outside `tests/`, as `copies: path:line and
     path:line`; when there are none it prints `copies: none`. This report is
