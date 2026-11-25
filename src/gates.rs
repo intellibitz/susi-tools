@@ -4,14 +4,13 @@
 //! (non-zero exit), same as a failed gate (T-CURSOR-1). Run one after another, Susi's gates
 //! took 14.3 s; side by side, 6.6 s.
 //!
-//! **The 10-second wall (phase 1)** — four lanes, each in its own build folder (Cargo lets one
+//! **The 10-second wall (phase 1)** — three lanes, each in its own build folder (Cargo lets one
 //! build at a time use a folder, so steps sharing one across lanes wait on each other):
 //! - the whole suite (`cargo nextest run --workspace`), with the repository's nextest profile
 //!   `gates` when `.config/nextest.toml` names one;
-//! - when packages have features, their suite with `--no-default-features` in
-//!   `<target>/no-default-features`;
-//! - those packages' native Clippy after their suite in the same folder (reuses the suite build;
-//!   a separate `no-default-features-lints` folder cost **52 s** cold under load, T-CURSOR-3);
+//! - when packages have features, their suite then native Clippy with `--no-default-features` in
+//!   `<target>/no-default-features` (Clippy reuses the suite build; a separate
+//!   `no-default-features-lints` folder cost **52 s** cold under load, T-CURSOR-3);
 //! - host `cargo fmt --check` and host Clippy.
 //!
 //! **Product-target Clippy (phase 2, apart)** — `cargo clippy --target …` for every `--target`
@@ -255,8 +254,7 @@ struct Profiles<'a> {
 }
 
 struct Plan {
-    /// Whole suite; customer suite then native Clippy; host fmt+clippy. (Empty fourth kept so
-    /// older call sites that destructured four lanes still compile in tests.)
+    /// Whole suite; customer suite then native Clippy; host fmt+clippy.
     line_lanes: [Vec<Step>; 3],
     cross_steps: Vec<Step>,
 }
