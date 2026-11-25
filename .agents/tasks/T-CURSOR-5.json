@@ -1,0 +1,24 @@
+{
+  "id": "T-CURSOR-5",
+  "title": "Dedupe gates and speed nextest arg builders",
+  "goal": "",
+  "vision": "V-48",
+  "size": "s",
+  "deps": [],
+  "scope": [
+    "src/gates.rs",
+    "src/speed.rs"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "gates::"
+    ]
+  },
+  "created_by": "CURSOR",
+  "created_unix": 1795625581
+}
