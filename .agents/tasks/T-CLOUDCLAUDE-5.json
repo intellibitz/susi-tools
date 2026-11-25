@@ -1,0 +1,28 @@
+{
+  "id": "T-CLOUDCLAUDE-5",
+  "title": "gates: the suite without default features runs the profile gates-no-default-features",
+  "goal": "Susi's suite without default features reran the repository's own checks (the JetBrains plugin compiled with javac, the VS Code extension's tests in node, the public firewall), about 3.8 s of processor time that the whole suite spends already, on a 4-core VM whose two suites side by side are bound by processor time. A repository that names a nextest profile gates-no-default-features gets it for that suite in gates and speed, as the whole suite gets gates.",
+  "vision": "V-48",
+  "size": "xs",
+  "deps": [],
+  "scope": [
+    "src/gates.rs",
+    "src/speed.rs",
+    "README.md"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked",
+      "--bins",
+      "-E",
+      "test(/gates::/)"
+    ]
+  },
+  "created_by": "CLOUDCLAUDE",
+  "created_unix": 1795593133
+}
