@@ -84,7 +84,9 @@ Board, tasks and claims); the rules below are this repository's own.
     without `--scope`, the paths its record names),
     `tasks close` (runs the acceptance and, only if it passes, commits the
     record's removal), `tasks finish` (close, then ship) and `ship` (committed
-    work only, a fast-forward of `main`, then Landed on the Board; then every
+    work only, a fast-forward of `main`, refused on a Cargo repository when
+    non-task files changed without a passing under-10s `gates` receipt on
+    `HEAD`'s tree unless `susi.land` is `host`, then Landed on the Board; then every
     Board item addressed to you not yet shown, as `workflow check` prints
     them; renews your claim, or releases it when
     the ship closed its task). A task of Susi's
@@ -133,8 +135,10 @@ Board, tasks and claims); the rules below are this repository's own.
     default/accept; T-CURSOR-4). **Phase 2** (apart): Clippy for every
     `--target` with `SUSI_CROSS_CHECK=1`, must pass, wall printed separately
     (cold five-triple rebuilds took 38–40 s; T-CURSOR-2). It names each
-    gate's time and refuses when phase 1 is over the 10-second line (the CEO,
-    2026-11-24: "a non negotiable mandate would be 10s").
+    gate's time, records `refs/susi-tools/gated/<tree>` when every gate passes
+    inside the 10-second line (revoking it otherwise) so a direct `ship` to
+    `main` requires a passing run, and refuses when phase 1 is over the
+    10-second line (the CEO, 2026-11-24: "a non negotiable mandate would be 10s").
     It also reports each 12-or-more-line block newly added to a Rust source
     that repeats code elsewhere outside `tests/`, as `copies: path:line and
     path:line`; when there are none it prints `copies: none`. This report is

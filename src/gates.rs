@@ -207,12 +207,53 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
     };
 
     let copies = copies::report(work);
-    Ok(Outcome {
+    let outcome = Outcome {
         gates,
         seconds,
         cross_seconds,
         copies,
-    })
+    };
+    record_tree_receipt(work, outcome.passed());
+    Ok(outcome)
+}
+
+/// Local ref namespace storing trees whose `susi-tools gates` passed inside the 10-second line.
+pub const GATED_PREFIX: &str = "refs/susi-tools/gated/";
+
+/// Records (when `passed` is true) or revokes (when `passed` is false) the passing-gates receipt
+/// for `work`'s clean index tree (`refs/susi-tools/gated/<tree_oid>`). When tracked files have
+/// unstaged edits, `gates` ran on bytes the index does not hold, so the tree is not stamped.
+pub fn record_tree_receipt(work: &Path, passed: bool) {
+    let Ok(repo) = crate::git::Repo::open(work) else {
+        return;
+    };
+    let unstaged_clean = repo.read(&["diff", "--quiet"]).is_ok();
+    let Some(tree) = repo
+        .try_read(&["write-tree"])
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+    else {
+        return;
+    };
+    let refname = format!("{GATED_PREFIX}{tree}");
+    if passed && unstaged_clean {
+        let _ = repo.try_read(&["update-ref", &refname, &tree]);
+    } else {
+        let _ = repo.try_read(&["update-ref", "-d", &refname]);
+    }
+}
+
+/// Whether `tree` has a passing under-10s `susi-tools gates` receipt in `repo`.
+pub fn has_passed_tree(repo: &crate::git::Repo, tree: &str) -> bool {
+    !tree.is_empty()
+        && repo
+            .try_read(&[
+                "rev-parse",
+                "-q",
+                "--verify",
+                &format!("{GATED_PREFIX}{tree}"),
+            ])
+            .is_some()
 }
 
 fn run_lanes(work: &Path, lanes: &[Vec<Step>]) -> Vec<Gate> {

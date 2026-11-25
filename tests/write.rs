@@ -1723,3 +1723,96 @@ fn the_bearings_group_bricks_by_stage_within_the_band() {
     at("the band is broken: 1 in flight, the band is 2 to 3");
     at("the band is broken: 3 next, at most 2");
 }
+
+#[test]
+fn ship_refuses_direct_main_without_passing_gates_receipt_and_allows_task_records() {
+    let fx = Fx::new("shipgated-fast");
+    let alpha = fx.clone_of("alpha");
+    let initial_main = fx.origin_ref("refs/heads/main");
+
+    // Un-gated Cargo commit is refused by direct `susi-tools ship`; `origin`'s main stays put.
+    std::fs::write(
+        alpha.join("Cargo.toml"),
+        "[package]\nname = \"p\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    commit_work(&fx, "alpha", "src/lib.rs", "T-A-1");
+    fx.refused("alpha", &["ship"], "no passing `susi-tools gates`");
+    assert_eq!(fx.origin_ref("refs/heads/main"), initial_main);
+
+    // Once `HEAD`'s tree carries a passing gates receipt, direct `ship` fast-forwards `main`.
+    let tree = fx.git(&alpha, &["rev-parse", "HEAD^{tree}"]);
+    fx.git(
+        &alpha,
+        &[
+            "update-ref",
+            &format!("refs/susi-tools/gated/{tree}"),
+            &tree,
+        ],
+    );
+    let shipped = fx.ok("alpha", &["ship"]);
+    assert!(shipped.contains("shipped"), "{shipped}");
+    let crate_main = fx.origin_ref("refs/heads/main");
+    assert_ne!(crate_main, initial_main);
+
+    // Pure `.agents/tasks/*` commits (`tasks start`, `tasks finish`) still ship on a Cargo repo
+    // without requiring a full workspace gates run.
+    let started = fx.ok(
+        "alpha",
+        &[
+            "tasks",
+            "start",
+            "Queue record on Cargo repo",
+            "--accept",
+            "cargo --version",
+            "--scope",
+            "src",
+            "--vision",
+            "V-1",
+        ],
+    );
+    assert!(started.contains("added T-ALPHA-1"), "{started}");
+    let finished = fx.ok("alpha", &["tasks", "finish", "T-ALPHA-1"]);
+    assert!(finished.contains("closed T-ALPHA-1"), "{finished}");
+}
+
+#[test]
+fn ship_refuses_direct_main_without_passing_gates_receipt_end_to_end() {
+    let fx = Fx::new("shipgated-e2e");
+    let alpha = fx.clone_of("alpha");
+    commit_crate(&fx, "alpha", true, "T-A-1");
+    fx.refused("alpha", &["ship"], "no passing `susi-tools gates`");
+
+    // Running real `susi-tools gates` under the 10s line records the receipt and lets `ship` pass.
+    let gates_ok = Command::new(env!("CARGO_BIN_EXE_susi-tools"))
+        .current_dir(&alpha)
+        .env("GIT_CONFIG_GLOBAL", fx.root.join("gitconfig"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("SUSI_AGENT", "alpha")
+        .env("CARGO_TARGET_DIR", fx.root.join("gates-target"))
+        .arg("gates")
+        .output()
+        .unwrap();
+    assert!(
+        gates_ok.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&gates_ok.stdout),
+        String::from_utf8_lossy(&gates_ok.stderr)
+    );
+    let shipped = fx.ok("alpha", &["ship"]);
+    assert!(shipped.contains("shipped"), "{shipped}");
+
+    // A failing `susi-tools gates` run leaves no receipt, and `ship` refuses.
+    commit_crate(&fx, "alpha", false, "T-A-1");
+    let gates_fail = Command::new(env!("CARGO_BIN_EXE_susi-tools"))
+        .current_dir(&alpha)
+        .env("GIT_CONFIG_GLOBAL", fx.root.join("gitconfig"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("SUSI_AGENT", "alpha")
+        .env("CARGO_TARGET_DIR", fx.root.join("gates-target"))
+        .arg("gates")
+        .output()
+        .unwrap();
+    assert!(!gates_fail.status.success());
+    fx.refused("alpha", &["ship"], "no passing `susi-tools gates`");
+}

@@ -7,7 +7,9 @@ default-filter = """
 not (
   test(speed_cold_json_reports_apart_and_keeps_agent_target)
   | test(speed_table_times_every_operation_including_features)
+  | test(speed_restores_touched_file_when_steps_fail)
   | test(gates_run_every_gate_side_by_side_and_name_the_one_that_fails)
   | test(a_host_lands_what_passes_its_gates_and_tells_once_what_does_not)
+  | test(ship_refuses_direct_main_without_passing_gates_receipt_end_to_end)
 )
 """

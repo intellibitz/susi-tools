@@ -82,6 +82,7 @@ pub fn ship(repo: &Repo, remote: &str, agent: &str) -> Result<Shipped, String> {
             tasks,
         });
     }
+    require_gates_receipt(repo, &tip, &head)?;
     repo.read(&[
         "push",
         "--quiet",
@@ -94,6 +95,43 @@ pub fn ship(repo: &Repo, remote: &str, agent: &str) -> Result<Shipped, String> {
         to: head,
         tasks,
     })
+}
+
+/// Direct ships to `main` on a Cargo repository must hold a passing under-10s `susi-tools gates`
+/// receipt on `head`'s tree, except pure `.agents/tasks/*` queue commits (`tasks add`, `start`,
+/// `close`, `finish`).
+fn require_gates_receipt(repo: &Repo, tip: &str, head: &str) -> Result<(), String> {
+    if repo
+        .try_read(&["cat-file", "-e", &format!("{head}:Cargo.toml")])
+        .is_none()
+    {
+        return Ok(());
+    }
+    let changed = repo.read(&[
+        "diff",
+        "--name-only",
+        "--no-renames",
+        &format!("{tip}..{head}"),
+    ])?;
+    if !changed
+        .lines()
+        .map(str::trim)
+        .any(|p| !p.is_empty() && !p.starts_with(".agents/tasks/"))
+    {
+        return Ok(());
+    }
+    let tree = repo
+        .read(&["rev-parse", &format!("{head}^{{tree}}")])?
+        .trim()
+        .to_owned();
+    if crate::gates::has_passed_tree(repo, &tree) {
+        return Ok(());
+    }
+    Err(format!(
+        "refused: {} has no passing `susi-tools gates` run within the {:.1}-second line (non-negotiable). Run `susi-tools gates` first, or set `git config susi.land host` when a company host lander is up",
+        &head[..head.len().min(12)],
+        crate::speed::LINE_SECONDS
+    ))
 }
 
 /// The `Task:` trailers of the commits in `range`, in order, once each.
