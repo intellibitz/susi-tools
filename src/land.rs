@@ -151,15 +151,11 @@ pub fn land(repo: &Repo, remote: &str, targets: &[String]) -> Result<Option<Vec<
                     },
                 }
             } else {
+                // Functional gate failure or wall clock over the 10-second line (refused).
                 Outcome::Failed {
                     agent_ref,
                     tip: tip.clone(),
-                    failed: gated
-                        .gates
-                        .iter()
-                        .filter(|g| !g.ok)
-                        .map(|g| (g.name.clone(), g.tail.clone()))
-                        .collect(),
+                    failed: gated.failures(),
                     seconds: gated.seconds,
                 }
             }

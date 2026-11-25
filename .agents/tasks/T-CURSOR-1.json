@@ -17,6 +17,8 @@
       "test",
       "--offline",
       "--locked",
+      "--bin",
+      "susi-tools",
       "gates_refuse_a_run_over_the_ten_second_line"
     ]
   },

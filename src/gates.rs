@@ -1,6 +1,7 @@
 //! `susi-tools gates`: every gate an agent runs before a ship, side by side, inside the 10-second
 //! line (the CEO, 2026-11-24: "a non negotiable mandate would be 10s. if anything goes above that,
-//! it would be treated high priority and fixed immediately"). Run one after another, Susi's gates
+//! it would be treated high priority and fixed immediately"). A run over the line is refused
+//! (non-zero exit), same as a failed gate (T-CURSOR-1). Run one after another, Susi's gates
 //! took 14.3 s; side by side, 6.6 s.
 //!
 //! Three lanes run at once, each in its own build folder (Cargo lets one build at a time use a
@@ -49,8 +50,42 @@ pub struct Outcome {
 }
 
 impl Outcome {
-    pub fn passed(&self) -> bool {
+    /// Every functional gate succeeded (tests, fmt, Clippy). The wall-clock line is separate:
+    /// [`Self::within_line`].
+    pub fn gates_ok(&self) -> bool {
         self.gates.iter().all(|g| g.ok)
+    }
+
+    /// Wall clock at or under the 10-second line.
+    pub fn within_line(&self) -> bool {
+        self.seconds <= LINE_SECONDS
+    }
+
+    /// Ship and land only when every gate passed *and* the run stayed inside the line (CEO,
+    /// 2026-11-24: the 10-second mandate is non-negotiable; a loud print alone did not stop a
+    /// ship, so over-line is a refuse).
+    pub fn passed(&self) -> bool {
+        self.gates_ok() && self.within_line()
+    }
+
+    /// Failures for land/Board when `passed` is false: each failed gate, or the speed line.
+    pub fn failures(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = self
+            .gates
+            .iter()
+            .filter(|g| !g.ok)
+            .map(|g| (g.name.clone(), g.tail.clone()))
+            .collect();
+        if self.gates_ok() && !self.within_line() {
+            out.push((
+                "speed".to_owned(),
+                format!(
+                    "OVER the {LINE_SECONDS:.0}-second line in {:.1} s; fix it before any other work",
+                    self.seconds
+                ),
+            ));
+        }
+        out
     }
 
     pub fn render(&self, work: &Path) -> String {
@@ -72,14 +107,19 @@ impl Outcome {
         for gate in self.gates.iter().filter(|g| !g.ok) {
             out.push_str(&format!("\n== {} failed:\n{}\n", gate.name, gate.tail));
         }
-        let verdict = if self.passed() {
+        let verdict = if self.gates_ok() {
             "every gate passed"
         } else {
             "a gate failed"
         };
-        if self.seconds > LINE_SECONDS {
+        if !self.within_line() {
             out.push_str(&format!(
-                "{verdict}, in {:.1} s: OVER the {LINE_SECONDS:.0}-second line, a defect of the highest priority; fix it before any other work\n",
+                "{verdict}, in {:.1} s: OVER the {LINE_SECONDS:.0}-second line, a defect of the highest priority; fix it before any other work (refused)\n",
+                self.seconds
+            ));
+        } else if self.gates_ok() {
+            out.push_str(&format!(
+                "{verdict}, in {:.1} s, under the {LINE_SECONDS:.0}-second line\n",
                 self.seconds
             ));
         } else {
@@ -426,6 +466,50 @@ mod tests {
             names(&lints),
             ["format", "clippy", "clippy, every product target"]
         );
+    }
+
+    /// Over the 10-second line refuses even when every functional gate passed (T-CURSOR-1): a loud
+    /// print alone used to exit 0 and let a ship through.
+    #[test]
+    fn gates_refuse_a_run_over_the_ten_second_line() {
+        let under = Outcome {
+            gates: vec![Gate {
+                name: "tests".into(),
+                command: "cargo nextest".into(),
+                seconds: 1.0,
+                ok: true,
+                tail: String::new(),
+            }],
+            seconds: 9.9,
+            copies: String::new(),
+        };
+        assert!(under.gates_ok());
+        assert!(under.within_line());
+        assert!(under.passed());
+        assert!(under.failures().is_empty());
+        assert!(under.render(Path::new(".")).contains("under the 10-second line"));
+
+        let over = Outcome {
+            gates: vec![Gate {
+                name: "tests".into(),
+                command: "cargo nextest".into(),
+                seconds: 11.0,
+                ok: true,
+                tail: String::new(),
+            }],
+            seconds: 11.0,
+            copies: String::new(),
+        };
+        assert!(over.gates_ok());
+        assert!(!over.within_line());
+        assert!(!over.passed());
+        let fails = over.failures();
+        assert_eq!(fails.len(), 1);
+        assert_eq!(fails[0].0, "speed");
+        assert!(fails[0].1.contains("OVER the 10-second line"));
+        let rendered = over.render(Path::new("."));
+        assert!(rendered.contains("OVER the 10-second line"));
+        assert!(rendered.contains("(refused)"));
     }
 
     /// A repository's nextest profile `gates` is the whole suite's, and only its, and
