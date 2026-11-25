@@ -178,6 +178,70 @@ pub fn vision_statement(board: &Repo, id: &str) -> Result<String, String> {
     Ok(statement)
 }
 
+/// The words of a command line given as one string (`--accept`), split as a POSIX shell splits
+/// them: blanks separate words; within single quotes every character is itself; within double
+/// quotes a backslash keeps a following `"`, `\\`, `$` or `` ` ``; outside quotes a backslash keeps
+/// the next character. An unclosed quote is an error. Until T-CLOUDCLAUDE-2 (Susi Tools) a line was
+/// split at every blank, so a quoted nextest filter became a broken check.
+pub fn words(line: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut in_word = false;
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => {
+                in_word = true;
+                loop {
+                    match chars.next() {
+                        Some('\'') => break,
+                        Some(other) => word.push(other),
+                        None => return Err(format!("an unclosed ' in `{line}`")),
+                    }
+                }
+            }
+            '"' => {
+                in_word = true;
+                loop {
+                    match chars.next() {
+                        Some('"') => break,
+                        Some('\\') => match chars.next() {
+                            Some(kept @ ('"' | '\\' | '$' | '`')) => word.push(kept),
+                            Some(other) => {
+                                word.push('\\');
+                                word.push(other);
+                            }
+                            None => return Err(format!("an unclosed \" in `{line}`")),
+                        },
+                        Some(other) => word.push(other),
+                        None => return Err(format!("an unclosed \" in `{line}`")),
+                    }
+                }
+            }
+            '\\' => {
+                in_word = true;
+                if let Some(next) = chars.next() {
+                    word.push(next);
+                }
+            }
+            blank if blank.is_whitespace() => {
+                if in_word {
+                    out.push(std::mem::take(&mut word));
+                    in_word = false;
+                }
+            }
+            other => {
+                in_word = true;
+                word.push(other);
+            }
+        }
+    }
+    if in_word {
+        out.push(word);
+    }
+    Ok(out)
+}
+
 /// Acceptance runs on whoever closes the task, so it is `cargo …` or a script of the repository.
 fn safe_accept(cmd: &[String]) -> Result<(), String> {
     let Some(program) = cmd.first() else {
@@ -435,4 +499,37 @@ pub fn brief(record: &Json, repository: &str, vision: Option<&str>) -> String {
 "
     ));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::words;
+
+    fn owned(list: &[&str]) -> Result<Vec<String>, String> {
+        Ok(list.iter().map(|w| (*w).to_owned()).collect())
+    }
+
+    #[test]
+    fn an_acceptance_line_splits_as_a_shell_splits_it() {
+        assert_eq!(
+            words("cargo nextest run --workspace -E 'package(x) | binary_id(y::z)'"),
+            owned(&[
+                "cargo",
+                "nextest",
+                "run",
+                "--workspace",
+                "-E",
+                "package(x) | binary_id(y::z)"
+            ])
+        );
+        assert_eq!(
+            words(r#"  cargo  test "a \"b\" \\ c" it\ s''x  "#),
+            owned(&["cargo", "test", r#"a "b" \ c"#, "it sx"])
+        );
+        assert_eq!(words(r#"say "back\slash""#), owned(&["say", r"back\slash"]));
+        assert_eq!(words("''"), owned(&[""]));
+        assert_eq!(words(""), owned(&[]));
+        assert!(words("cargo 'open").is_err_and(|e| e.contains("unclosed '")));
+        assert!(words("cargo \"open").is_err_and(|e| e.contains("unclosed \"")));
+    }
 }

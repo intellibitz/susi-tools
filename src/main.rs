@@ -505,13 +505,8 @@ fn run(args: &[String]) -> Result<(), Failure> {
             }
             // A task serves a vision the CEO set: on Susi's main, not only in a checkout.
             tasks::vision_statement(&o.board(&repo)?, &vision)?;
-            let accept: Vec<String> = o
-                .accept
-                .clone()
-                .unwrap_or_default()
-                .split_whitespace()
-                .map(str::to_owned)
-                .collect();
+            let accept = tasks::words(o.accept.as_deref().unwrap_or_default())
+                .map_err(|why| Failure::Run(format!("--accept: {why}")))?;
             let (id, path) = tasks::add(
                 &repo,
                 &tasks::NewTask {
