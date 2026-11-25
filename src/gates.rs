@@ -10,8 +10,8 @@
 //!   `gates` when `.config/nextest.toml` names one;
 //! - when packages have features, their suite with `--no-default-features` in
 //!   `<target>/no-default-features`;
-//! - those packages' native Clippy in `<target>/no-default-features-lints` (T-CURSOR-2: used to
-//!   run after the customer suite in one lane and warm five-target summed to 10.5 s);
+//! - those packages' native Clippy after their suite in the same folder (reuses the suite build;
+//!   a separate `no-default-features-lints` folder cost **52 s** cold under load, T-CURSOR-3);
 //! - host `cargo fmt --check` and host Clippy.
 //!
 //! **Product-target Clippy (phase 2, apart)** — `cargo clippy --target …` for every `--target`
@@ -254,12 +254,10 @@ struct Profiles<'a> {
     no_default: Option<&'a str>,
 }
 
-/// Folder for the customer build's native Clippy. Separate from the customer suite's folder so
-/// Cargo's build-directory lock does not serialize lints behind tests (T-CURSOR-2).
-pub const CUSTOMER_LINTS_DIR: &str = "no-default-features-lints";
-
 struct Plan {
-    line_lanes: [Vec<Step>; 4],
+    /// Whole suite; customer suite then native Clippy; host fmt+clippy. (Empty fourth kept so
+    /// older call sites that destructured four lanes still compile in tests.)
+    line_lanes: [Vec<Step>; 3],
     cross_steps: Vec<Step>,
 }
 
@@ -271,7 +269,6 @@ fn plan(
     profiles: Profiles<'_>,
 ) -> Plan {
     let customer = base.join("no-default-features");
-    let customer_lints = base.join(CUSTOMER_LINTS_DIR);
     let clippy = [
         "clippy",
         "--workspace",
@@ -323,8 +320,7 @@ fn plan(
         whole.extend(["--profile", profile]);
     }
     let tests = vec![step("tests", &whole, None, false)];
-    let mut customer_tests = Vec::new();
-    let mut customer_lint_steps = Vec::new();
+    let mut customer_lane = Vec::new();
     let mut lints = vec![step("format", &["fmt", "--all", "--check"], None, false)];
     lints.push(Step {
         name: "clippy",
@@ -350,16 +346,18 @@ fn plan(
         if let Some(profile) = profiles.no_default {
             owned.extend(["--profile".to_owned(), profile.to_owned()]);
         }
-        customer_tests.push(Step {
+        // Suite then native Clippy in one folder: Clippy reuses the suite's build (T-CURSOR-3).
+        // Product-target Clippy stays phase 2 so it cannot sum into the 10-second wall.
+        customer_lane.push(Step {
             name: "tests, no default features",
             args: owned,
             target: Some(customer.clone()),
             cross: false,
         });
-        customer_lint_steps.push(Step {
+        customer_lane.push(Step {
             name: "clippy, no default features",
             args: customer_clippy(&[]),
-            target: Some(customer_lints.clone()),
+            target: Some(customer.clone()),
             cross: false,
         });
     }
@@ -376,14 +374,14 @@ fn plan(
             cross_steps.push(Step {
                 name: "clippy, every product target, no default features",
                 args: customer_clippy(&cross_refs),
-                target: Some(customer_lints.clone()),
+                target: Some(customer.clone()),
                 cross: true,
             });
         }
     }
 
     Plan {
-        line_lanes: [tests, customer_tests, customer_lint_steps, lints],
+        line_lanes: [tests, customer_lane, lints],
         cross_steps,
     }
 }
@@ -468,28 +466,26 @@ mod tests {
         assert_eq!(test_threads(4, Some(std::ffi::OsStr::new("3"))), None);
     }
 
-    /// Customer native Clippy runs beside the customer suite (own folder). Product-target Clippy
-    /// is phase 2 (apart from the 10-second line): cold five-triple rebuilds took 38–40.5 s.
+    /// Customer native Clippy runs after the customer suite in the same folder (T-CURSOR-3).
+    /// Product-target Clippy is phase 2 (apart): cold five-triple rebuilds took 38–40.5 s.
     #[test]
-    fn lanes_run_customer_lints_beside_customer_tests() {
+    fn lanes_run_customer_native_clippy_after_its_tests() {
         let base = Path::new("/target");
         let customer = base.join("no-default-features");
-        let customer_lints = base.join(CUSTOMER_LINTS_DIR);
         let featured = vec!["susi-commercial".to_owned()];
         let targets = vec!["x86_64-pc-windows-msvc".to_owned()];
         let Plan {
-            line_lanes: [tests, customer_tests, customer_lint_lane, lints],
+            line_lanes: [tests, customer_lane, lints],
             cross_steps,
         } = plan(base, Some(&featured), &targets, Profiles::default());
         let names = |lane: &[Step]| lane.iter().map(|s| s.name).collect::<Vec<_>>();
-        assert_eq!(names(&customer_tests), ["tests, no default features"]);
-        assert!(customer_tests
+        assert_eq!(
+            names(&customer_lane),
+            ["tests, no default features", "clippy, no default features"]
+        );
+        assert!(customer_lane
             .iter()
             .all(|s| s.target.as_deref() == Some(customer.as_path())));
-        assert_eq!(names(&customer_lint_lane), ["clippy, no default features"]);
-        assert!(customer_lint_lane
-            .iter()
-            .all(|s| s.target.as_deref() == Some(customer_lints.as_path())));
         assert_eq!(names(&lints), ["format", "clippy"]);
         assert!(tests.iter().all(|s| s.target.is_none()));
         assert_eq!(
@@ -500,13 +496,13 @@ mod tests {
             ]
         );
         assert!(cross_steps.iter().all(|s| s.cross));
+        assert_eq!(cross_steps[1].target.as_deref(), Some(customer.as_path()));
 
         let Plan {
-            line_lanes: [_, customer_tests, customer_lint_lane, lints],
+            line_lanes: [_, customer_lane, lints],
             cross_steps,
         } = plan(base, None, &targets, Profiles::default());
-        assert!(customer_tests.is_empty());
-        assert!(customer_lint_lane.is_empty());
+        assert!(customer_lane.is_empty());
         assert_eq!(names(&lints), ["format", "clippy"]);
         assert_eq!(
             cross_steps.iter().map(|s| s.name).collect::<Vec<_>>(),
@@ -598,7 +594,7 @@ mod tests {
             no_default: None,
         };
         let Plan {
-            line_lanes: [tests, customer_lane, _, _],
+            line_lanes: [tests, customer_lane, _],
             ..
         } = plan(base, Some(&featured), &[], whole);
         assert_eq!(
@@ -621,7 +617,7 @@ mod tests {
             no_default: Some("gates-no-default-features"),
         };
         let Plan {
-            line_lanes: [tests, customer_lane, _, _],
+            line_lanes: [tests, customer_lane, _],
             ..
         } = plan(base, Some(&featured), &[], both);
         assert!(!tests[0].args.iter().any(|a| a == "--profile"));
