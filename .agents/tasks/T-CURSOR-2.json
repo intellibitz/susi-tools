@@ -1,0 +1,26 @@
+{
+  "id": "T-CURSOR-2",
+  "title": "Gates: parallel customer lints lane so five-target stays under 10s",
+  "goal": "Customer clippy was sequential after customer tests in one lane (warm five-target 10.5s refused). Split customer lints into a fourth parallel lane so wall is max not sum; document cold five-target Clippy as warm-apart with measured floor.",
+  "vision": "V-45",
+  "size": "s",
+  "deps": [],
+  "scope": [
+    "src/gates.rs",
+    "tests/speed.rs"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--bin",
+      "susi-tools",
+      "lanes_run_customer_lints_beside_customer_tests"
+    ]
+  },
+  "created_by": "CURSOR",
+  "created_unix": 1795619855
+}
