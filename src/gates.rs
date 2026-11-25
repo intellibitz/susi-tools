@@ -117,11 +117,6 @@ impl Outcome {
                 "{verdict}, in {:.1} s: OVER the {LINE_SECONDS:.0}-second line, a defect of the highest priority; fix it before any other work (refused)\n",
                 self.seconds
             ));
-        } else if self.gates_ok() {
-            out.push_str(&format!(
-                "{verdict}, in {:.1} s, under the {LINE_SECONDS:.0}-second line\n",
-                self.seconds
-            ));
         } else {
             out.push_str(&format!(
                 "{verdict}, in {:.1} s, under the {LINE_SECONDS:.0}-second line\n",
@@ -487,7 +482,9 @@ mod tests {
         assert!(under.within_line());
         assert!(under.passed());
         assert!(under.failures().is_empty());
-        assert!(under.render(Path::new(".")).contains("under the 10-second line"));
+        assert!(under
+            .render(Path::new("."))
+            .contains("under the 10-second line"));
 
         let over = Outcome {
             gates: vec![Gate {
