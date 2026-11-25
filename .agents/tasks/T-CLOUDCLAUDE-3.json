@@ -1,0 +1,28 @@
+{
+  "id": "T-CLOUDCLAUDE-3",
+  "title": "commit-msg refuses files inside another agent's live claim",
+  "goal": "A task recorded in the checkout but not claimed (tasks start's claim refused for an overlap) let its commit through with no scope check, so cloud-claude's 186ccc85 edited docs/console.md inside cloud-antigravity's live claim. The commit-msg hook now refuses a staged file that lies inside a live claim another agent holds on another task, naming the file, the claim and its agent.",
+  "vision": "V-48",
+  "size": "xs",
+  "deps": [],
+  "scope": [
+    "src/githook.rs",
+    "tests/githook.rs"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked",
+      "--test",
+      "githook",
+      "-E",
+      "test(/commit_msg/)"
+    ]
+  },
+  "created_by": "CLOUDCLAUDE",
+  "created_unix": 1795591930
+}
