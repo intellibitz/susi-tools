@@ -362,6 +362,82 @@ fn the_root_rule_refuses_only_another_agents_root_or_a_damaged_marker() {
 }
 
 #[test]
+fn a_role_has_no_root_and_no_agent_works_as_one() {
+    // The lead is a role, held by an agent from its own root: a root of the role's own was shared
+    // by every vendor that led (CachyOS's ~/susi-agents/lead, 2026-11-25 and 26; T-CLAUDE-383).
+    let fx = Fixture::new("role");
+    let lead = fx.root.join("agents/lead");
+    let made = fx.run(
+        &fx.root,
+        &[
+            "workflow",
+            "root",
+            "init",
+            "--agent",
+            "lead",
+            lead.to_str().unwrap(),
+        ],
+        "",
+        &[],
+    );
+    assert!(!made.status.success(), "a role's root was made");
+    assert!(
+        err(&made).contains("is a role, not an agent"),
+        "{}",
+        err(&made)
+    );
+
+    // A root marked for the role before this rule: nobody commits there, whoever they say they are.
+    std::fs::create_dir_all(&lead).unwrap();
+    std::fs::write(
+        lead.join(".susi-agent-root"),
+        format!(
+            r#"{{"schema":"susi-agent-root-v1","agent":"lead","aliases":[],"created_unix":1,"dir":"{}"}}"#,
+            lead.display()
+        ),
+    )
+    .unwrap();
+    let clone = lead.join("work");
+    fx.git(
+        &fx.root,
+        &[
+            "clone",
+            "-q",
+            "--template=",
+            "origin.git",
+            clone.to_str().unwrap(),
+        ],
+    );
+    for who in [&[("SUSI_AGENT", "claude")][..], &[][..]] {
+        let out = fx.hook(&clone, &["pre-commit"], "", who);
+        assert!(
+            !out.status.success(),
+            "a commit in a role's root, as {who:?}"
+        );
+        assert!(
+            err(&out).contains("is the root of the role `lead`"),
+            "{}",
+            err(&out)
+        );
+    }
+
+    // And no agent calls itself by the role's name, inside a root or out of one.
+    for dir in [clone, fx.work()] {
+        let out = fx.hook(&dir, &["pre-commit"], "", &[("SUSI_AGENT", "Lead")]);
+        assert!(
+            !out.status.success(),
+            "an agent named lead in {}",
+            dir.display()
+        );
+        assert!(
+            err(&out).contains("is a role, not an agent"),
+            "{}",
+            err(&out)
+        );
+    }
+}
+
+#[test]
 fn pre_commit_refuses_only_far_behind_and_never_when_the_remote_is_silent() {
     let fx = Fixture::new("fresh");
     let other = fx.root.join("other");
