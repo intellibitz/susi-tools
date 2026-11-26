@@ -136,8 +136,11 @@ pub fn foreign_root(dir: &Path, asking: Option<&str>) -> Result<Option<(Root, St
     let Some(root) = find_root(dir)? else {
         return Ok(None);
     };
+    // A root marked for a role (`lead`) is everyone's who holds it, so it is no one's own.
+    let shared = crate::agent::role(&root.agent).is_some();
     Ok(match asking.filter(|a| !a.trim().is_empty()) {
-        Some(asking) if !same_agent(&root, asking) => Some((root, asking.to_owned())),
+        Some(asking) if shared || !same_agent(&root, asking) => Some((root, asking.to_owned())),
+        None if shared => Some((root, "an agent who does not say who it is".to_owned())),
         _ => None,
     })
 }
@@ -146,6 +149,13 @@ pub fn root_refusal(foreign: Option<&(Root, String)>) -> Option<String> {
     let (root, asking) = foreign?;
     if allowed("SUSI_ALLOW_FOREIGN_ROOT") {
         return None;
+    }
+    if crate::agent::role(&root.agent).is_some() {
+        return Some(format!(
+            "❌ {} is the root of the role `{}`, which every agent holding it would share; you are {asking}. Agents never share a folder.\n   Work only under your own root (susi-tools workflow root init --agent <your tool>); hold the lead with `susi-tools lead claim`.",
+            root.dir.display(),
+            root.agent
+        ));
     }
     Some(format!(
         "❌ {} is the root of agent `{}`; you are `{asking}`. Agents never work in each other's roots.\n   Work only under your own root (susi-tools workflow root init --agent {asking}); ask `{}` on the Board for anything you need from it.",
@@ -176,6 +186,9 @@ fn default_root(agent: &str) -> Result<PathBuf, Stop> {
 /// changes nothing; a folder that is, or is inside, another agent's root is refused.
 pub fn init(dir: &Path, agent: &str, now: i64) -> Result<PathBuf, String> {
     crate::agent::token(agent)?;
+    if let Some(why) = crate::agent::role(agent) {
+        return Err(why);
+    }
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     let dir = dir
         .canonicalize()
@@ -301,7 +314,11 @@ pub fn reuse(work: &Path, tasks: &[String]) -> Result<(), Stop> {
 /// Refuse a checkout inside another agent's root, or under a marker that cannot be read.
 pub fn own_root(repo: &Repo, agent: Option<&str>) -> Result<(), Stop> {
     let work = repo.work_tree()?;
-    let asking = crate::agent::name(agent, repo).ok();
+    let raw = crate::agent::given(agent, repo);
+    if let Some(why) = crate::agent::role(&raw) {
+        return Err(Stop::Refused(format!("❌ {why}")));
+    }
+    let asking = (!raw.is_empty()).then_some(raw);
     let foreign = foreign_root(work, asking.as_deref())
         .map_err(|why| Stop::Refused(format!("❌ {why}: the marker says whose root this is")))?;
     match root_refusal(foreign.as_ref()) {
