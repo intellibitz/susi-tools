@@ -192,6 +192,7 @@ impl WorkspaceFixture {
             .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("CARGO_TARGET_DIR", self.target_dir())
+            .env_remove("NEXTEST_DOUBLE_SPAWN")
             .args(["gates"])
             .output()
             .unwrap();
@@ -213,8 +214,11 @@ fn gates_run_every_gate_side_by_side_and_name_the_one_that_fails() {
     assert_eq!(code, 0, "stdout:\n{out}\nstderr:\n{err}");
     for gate in [
         "ok",
-        "tests: cargo nextest run --workspace --offline --locked",
-        "tests, no default features: CARGO_TARGET_DIR=",
+        // Each suite runs without nextest's double spawn (T-CLOUDCLAUDE-7).
+        "tests: NEXTEST_DOUBLE_SPAWN=0 ",
+        "cargo nextest run --workspace --offline --locked",
+        "tests, no default features: NEXTEST_DOUBLE_SPAWN=0 ",
+        "CARGO_TARGET_DIR=",
         "cargo nextest run --offline --locked --no-default-features -p tiny-speed-probe",
         "format: cargo fmt --all --check",
         "clippy: cargo clippy --workspace --all-targets",
