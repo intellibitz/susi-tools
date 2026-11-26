@@ -6,8 +6,7 @@
 //!
 //! - each agent ref ahead of `main` is checked out in the clone's own worktree and its gates run
 //!   (`gates::run`, side by side); passing, it is pushed as `main`, a fast-forward, through the
-//!   clone's own hooks; a run whose gates all passed but went over the 10-second line is run once
-//!   more, warm, and judged on that run, since the first also compiled the change;
+//!   clone's own hooks;
 //! - one whose gates fail, or that `main` has moved past, is left where it is, and its agent is
 //!   told on the Board, once for each commit;
 //! - one run at a time (a lock in the clone's Git folder), so a timer may start it every minute.
@@ -128,11 +127,7 @@ pub fn land(repo: &Repo, remote: &str, targets: &[String]) -> Result<Option<Vec<
         } else {
             let work = checkout(repo, &git_dir, &tip)?;
             let mut gated = gates::run(&work, targets)?;
-            // The line is warm time: the first run at a new tip also builds what it changed (a
-            // change to the agent vault rebuilds most of Susi: 23.5-27.6 s on CachyOS, Board
-            // 9456, 9472). Every gate passed and only the clock went over: once more, warm, and
-            // that run is judged. A failed gate is not run again.
-            if gated.only_over_line() {
+            if gated.measure_again() {
                 gated = gates::run(&work, targets)?;
             }
             if gated.passed() {

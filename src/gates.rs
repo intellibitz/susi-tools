@@ -59,18 +59,22 @@ impl Outcome {
         self.seconds <= LINE_SECONDS
     }
 
-    /// Every gate passed and only the clock went over the line: the run to measure again, warm.
-    /// The line is warm time (AGENTS.md, "Speed"), and the first run after a new tip also
-    /// compiles what it changed. A failed gate is never run again.
-    pub fn only_over_line(&self) -> bool {
-        self.gates_ok() && !self.within_line()
-    }
-
     /// Ship and land only when every gate passed *and* phase 1 stayed inside the line (CEO,
     /// 2026-11-24: the 10-second mandate is non-negotiable; a loud print alone did not stop a
     /// ship, so over-line is a refuse). Cross Clippy time is apart (T-CURSOR-2).
     pub fn passed(&self) -> bool {
         self.gates_ok() && self.within_line()
+    }
+
+    /// Whether the lander measures this run once more before refusing it: every gate passed and
+    /// only the wall clock was over the line. Its first run on a tip it has just checked out also
+    /// compiles that tip, beside whatever else the host runs then (a release's journeys, another
+    /// agent's gates); the line is for the gates warm (Susi's `AGENTS.md`, "Speed"), which the
+    /// second run measures, and a tip still over the line warm is refused. On 2026-11-25 every
+    /// commit the lander refused for speed alone landed unchanged later, and on 2026-11-26 it
+    /// refused three at 23.5 to 27.6 s while its own release ran (T-CLAUDE-384).
+    pub fn measure_again(&self) -> bool {
+        self.gates_ok() && !self.within_line()
     }
 
     /// Failures for land/Board when `passed` is false: each failed gate, or the speed line.
@@ -536,12 +540,18 @@ mod tests {
     }
 
     #[test]
-    fn only_a_run_whose_gates_all_passed_is_measured_again() {
-        assert!(ok_outcome(23.9, None).only_over_line());
-        assert!(!ok_outcome(4.0, None).only_over_line());
-        let mut failed = ok_outcome(23.9, None);
-        failed.gates[0].ok = false;
-        assert!(!failed.only_over_line());
+    fn only_a_run_over_the_line_with_every_gate_passing_is_measured_again() {
+        assert!(ok_outcome(23.5, None).measure_again(), "slow, all passing");
+        assert!(!ok_outcome(4.0, None).measure_again(), "inside the line");
+        assert!(!ok_outcome(10.0, None).measure_again(), "at the line");
+        let mut failing = ok_outcome(23.5, None);
+        failing.gates[0].ok = false;
+        assert!(
+            !failing.measure_again(),
+            "a failing gate is refused at once"
+        );
+        // Product-target Clippy's own phase is apart from the line, so it asks for nothing.
+        assert!(!ok_outcome(4.0, Some(45.0)).measure_again());
     }
 
     fn lane_names(lane: &[Step]) -> Vec<&str> {
