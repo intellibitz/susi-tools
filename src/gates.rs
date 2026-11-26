@@ -66,6 +66,17 @@ impl Outcome {
         self.gates_ok() && self.within_line()
     }
 
+    /// Whether the lander measures this run once more before refusing it: every gate passed and
+    /// only the wall clock was over the line. Its first run on a tip it has just checked out also
+    /// compiles that tip, beside whatever else the host runs then (a release's journeys, another
+    /// agent's gates); the line is for the gates warm (Susi's `AGENTS.md`, "Speed"), which the
+    /// second run measures, and a tip still over the line warm is refused. On 2026-11-25 every
+    /// commit the lander refused for speed alone landed unchanged later, and on 2026-11-26 it
+    /// refused three at 23.5 to 27.6 s while its own release ran (T-CLAUDE-384).
+    pub fn measure_again(&self) -> bool {
+        self.gates_ok() && !self.within_line()
+    }
+
     /// Failures for land/Board when `passed` is false: each failed gate, or the speed line.
     pub fn failures(&self) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = self
@@ -526,6 +537,21 @@ mod tests {
             cross_seconds,
             copies: String::new(),
         }
+    }
+
+    #[test]
+    fn only_a_run_over_the_line_with_every_gate_passing_is_measured_again() {
+        assert!(ok_outcome(23.5, None).measure_again(), "slow, all passing");
+        assert!(!ok_outcome(4.0, None).measure_again(), "inside the line");
+        assert!(!ok_outcome(10.0, None).measure_again(), "at the line");
+        let mut failing = ok_outcome(23.5, None);
+        failing.gates[0].ok = false;
+        assert!(
+            !failing.measure_again(),
+            "a failing gate is refused at once"
+        );
+        // Product-target Clippy's own phase is apart from the line, so it asks for nothing.
+        assert!(!ok_outcome(4.0, Some(45.0)).measure_again());
     }
 
     fn lane_names(lane: &[Step]) -> Vec<&str> {
