@@ -1,0 +1,27 @@
+{
+  "id": "T-CLOUDCLAUDE-6",
+  "title": "gates: the walks run apart from the line, and fmt checks only the packages a change touches",
+  "goal": "On a cloud VM's 4 cores Susi's gates need about 53 CPU-seconds, 13 to 16 s warm; the CEO, 2026-11-26: trim the suites so cloud gates fit 4 cores, with the end-to-end walks apart. A repository whose .config/nextest.toml names a profile gates-walks gets it run after the line, beside product-target Clippy: it must pass, and its wall is printed apart. cargo fmt --check runs only on the packages whose files a change touches since its merge base with origin/main (all of them when a manifest-free root file like rustfmt.toml or rust-toolchain changed, or no base is known): rustfmt formats file by file, and main is formatted.",
+  "vision": "V-48",
+  "size": "s",
+  "deps": [],
+  "scope": [
+    "src/gates.rs",
+    "README.md"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "nextest",
+      "run",
+      "--offline",
+      "--locked",
+      "--bins",
+      "-E",
+      "test(/gates::/)"
+    ]
+  },
+  "created_by": "CLOUDCLAUDE",
+  "created_unix": 1795688195
+}
