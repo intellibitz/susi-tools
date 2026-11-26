@@ -13,11 +13,14 @@
   "accept": {
     "cmd": [
       "cargo",
-      "test",
+      "nextest",
+      "run",
       "--offline",
       "--locked",
-      "--lib",
-      "gates"
+      "--bin",
+      "susi-tools",
+      "-E",
+      "test(gates::)"
     ]
   },
   "created_by": "CLOUDCLAUDE754EFB",

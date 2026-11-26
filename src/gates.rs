@@ -59,6 +59,13 @@ impl Outcome {
         self.seconds <= LINE_SECONDS
     }
 
+    /// Every gate passed and only the clock went over the line: the run to measure again, warm.
+    /// The line is warm time (AGENTS.md, "Speed"), and the first run after a new tip also
+    /// compiles what it changed. A failed gate is never run again.
+    pub fn only_over_line(&self) -> bool {
+        self.gates_ok() && !self.within_line()
+    }
+
     /// Ship and land only when every gate passed *and* phase 1 stayed inside the line (CEO,
     /// 2026-11-24: the 10-second mandate is non-negotiable; a loud print alone did not stop a
     /// ship, so over-line is a refuse). Cross Clippy time is apart (T-CURSOR-2).
@@ -526,6 +533,15 @@ mod tests {
             cross_seconds,
             copies: String::new(),
         }
+    }
+
+    #[test]
+    fn only_a_run_whose_gates_all_passed_is_measured_again() {
+        assert!(ok_outcome(23.9, None).only_over_line());
+        assert!(!ok_outcome(4.0, None).only_over_line());
+        let mut failed = ok_outcome(23.9, None);
+        failed.gates[0].ok = false;
+        assert!(!failed.only_over_line());
     }
 
     fn lane_names(lane: &[Step]) -> Vec<&str> {
