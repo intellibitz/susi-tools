@@ -126,10 +126,7 @@ pub fn land(repo: &Repo, remote: &str, targets: &[String]) -> Result<Option<Vec<
             }
         } else {
             let work = checkout(repo, &git_dir, &tip)?;
-            let mut gated = gates::run(&work, targets)?;
-            if gated.measure_again() {
-                gated = gates::run(&work, targets)?;
-            }
+            let (gated, _first) = gates::run_warm(&work, targets)?;
             if gated.passed() {
                 let tasks = crate::ship::trailers(repo, &format!("{main}..{tip}"))?;
                 match repo.read(&["push", "--quiet", remote, &format!("{tip}:refs/heads/main")]) {

@@ -152,6 +152,13 @@ Board, tasks and claims); the rules below are this repository's own.
     inside the 10-second line (revoking it otherwise) so a direct `ship` to
     `main` requires a passing run, and refuses when phase 1 is over the
     10-second line (the CEO, 2026-11-24: "a non negotiable mandate would be 10s").
+    The line is for the gates warm: a run in which every gate passed and only
+    the clock was over is measured once more before it is refused, since a
+    first run after an edit, or on a tip just checked out, also compiles,
+    beside whatever else the host runs then. `land` has done so since
+    T-CLAUDE-384 and `gates` does since T-CLAUDE-432 (an agent's gates read
+    9.8 and 10.5 s while the lander compiled a landing beside them, 2.6 s at
+    the next run); it says how long the first run took.
     It also reports each 12-or-more-line block newly added to a Rust source
     that repeats code elsewhere outside `tests/`, as `copies: path:line and
     path:line`; when there are none it prints `copies: none`. This report is

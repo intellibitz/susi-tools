@@ -75,6 +75,17 @@ impl WorkspaceFixture {
             &fx.work(),
             &["push", "-q", bare.to_str().unwrap(), "HEAD:refs/heads/main"],
         );
+        // The fixture is a checkout that has not fetched: it knows no `origin/main`, so the gates
+        // check the format of every package. A newer Git records `origin/main` on a push to the
+        // address of a remote it knows (2.56 does, and the gates then found nothing touched and
+        // nothing to check, which failed `gates_run_every_gate...` on that host alone); an older
+        // one does not. The fixture says which it is.
+        let _ = Command::new(git_program::path())
+            .current_dir(fx.work())
+            .env("GIT_CONFIG_GLOBAL", fx.root.join("gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args(["update-ref", "-d", "refs/remotes/origin/main"])
+            .output();
         std::fs::create_dir_all(fx.target_dir()).unwrap();
         fx
     }

@@ -64,7 +64,8 @@ Speed
                                  and fast-forward main with what passes; the Board says which
   susi-tools gates [--target <triple>]...
                                  every gate before a ship (tests, tests without default features,
-                                 format, Clippy, Clippy per target), side by side, inside the line
+                                 format, Clippy, Clippy per target), side by side, inside the line;
+                                 a run that passed and only took too long is measured once more, warm
 Harvested code: the second program, local-harvest audit [--range <A..B>] | notices [--check]
 The lead (a role any agent takes: the one the CEO is talking to)
   susi-tools lead                the lead's bearings: who leads, the brick map with each brick's
@@ -930,7 +931,12 @@ fn run(args: &[String]) -> Result<(), Failure> {
             }
             let repo = git::Repo::open(Path::new("."))?;
             let work = repo.work_tree()?.to_path_buf();
-            let outcome = gates::run(&work, &targets).map_err(Failure::Run)?;
+            let (outcome, first) = gates::run_warm(&work, &targets).map_err(Failure::Run)?;
+            if let Some(seconds) = first {
+                println!(
+                    "the first run passed every gate in {seconds:.1} s, over the line: it also compiled, or the host was busy; measured once more, warm:"
+                );
+            }
             print!("{}", outcome.render(&work));
             if outcome.passed() {
                 Ok(())

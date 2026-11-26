@@ -77,13 +77,16 @@ impl Outcome {
         self.gates_ok() && self.within_line()
     }
 
-    /// Whether the lander measures this run once more before refusing it: every gate passed and
-    /// only the wall clock was over the line. Its first run on a tip it has just checked out also
-    /// compiles that tip, beside whatever else the host runs then (a release's journeys, another
-    /// agent's gates); the line is for the gates warm (Susi's `AGENTS.md`, "Speed"), which the
-    /// second run measures, and a tip still over the line warm is refused. On 2026-11-25 every
-    /// commit the lander refused for speed alone landed unchanged later, and on 2026-11-26 it
-    /// refused three at 23.5 to 27.6 s while its own release ran (T-CLAUDE-384).
+    /// Whether this run is measured once more before it is refused ([`run_warm`]): every gate
+    /// passed and only the wall clock was over the line. A first run on a tip just checked out,
+    /// or after an edit, also compiles, beside whatever else the host runs then (a release's
+    /// journeys, another agent's gates, the lander building a landing); the line is for the
+    /// gates warm (Susi's `AGENTS.md`, "Speed"), which the second run measures, and work still
+    /// over the line warm is refused. On 2026-11-25 every commit the lander refused for speed
+    /// alone landed unchanged later, and on 2026-11-26 it refused three at 23.5 to 27.6 s while
+    /// its own release ran (T-CLAUDE-384). The same day an agent's own gates read 9.8 and 10.5 s
+    /// while the lander compiled a landing beside them, and 2.6 s at the next run, so the command
+    /// `gates` measures again as the lander does (T-CLAUDE-432).
     pub fn measure_again(&self) -> bool {
         self.gates_ok() && !self.within_line()
     }
@@ -171,6 +174,19 @@ fn step(name: &'static str, args: &[&str], target: Option<&Path>, cross: bool) -
         target: target.map(Path::to_path_buf),
         cross,
     }
+}
+
+/// Runs the gates, and once more when every gate passed and only the wall clock was over the
+/// line ([`Outcome::measure_again`]), so what is judged is the gates warm. Returns the run to
+/// judge and, when it measured twice, how long the first run took. One rule for the command
+/// `gates` and for `land`.
+pub fn run_warm(work: &Path, targets: &[String]) -> Result<(Outcome, Option<f64>), String> {
+    let first = run(work, targets)?;
+    if !first.measure_again() {
+        return Ok((first, None));
+    }
+    let before = first.seconds;
+    Ok((run(work, targets)?, Some(before)))
 }
 
 /// Runs every gate of the Cargo checkout at `work`. Phase 1 (10-second line) is the suites and
