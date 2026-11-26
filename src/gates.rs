@@ -106,13 +106,30 @@ impl Outcome {
         if self.gates_ok() && !self.within_line() {
             out.push((
                 "speed".to_owned(),
-                format!(
-                    "OVER the {LINE_SECONDS:.0}-second line in {:.1} s; fix it before any other work",
-                    self.seconds
-                ),
+                self.over_line(load_average().as_deref()),
             ));
         }
         out
+    }
+
+    /// Why a run over the line was refused, with each gate's own time and the machine's load
+    /// when it ended: a reader on the Board otherwise cannot tell which gate is the long pole,
+    /// or a slow commit from a busy host (Board 8704, 2026-11-25: every landing refused at 11 to
+    /// 12 s, and the answer said only the total).
+    fn over_line(&self, load: Option<&str>) -> String {
+        let mut text = format!(
+            "OVER the {LINE_SECONDS:.0}-second line in {:.1} s; fix it before any other work",
+            self.seconds
+        );
+        let mut gates: Vec<&Gate> = self.gates.iter().collect();
+        gates.sort_by(|a, b| b.seconds.total_cmp(&a.seconds));
+        for gate in gates {
+            text.push_str(&format!("\n  {:>5.1} s  {}", gate.seconds, gate.name));
+        }
+        if let Some(load) = load {
+            text.push_str(&format!("\nload average at the end: {load}"));
+        }
+        text
     }
 
     pub fn render(&self, work: &Path) -> String {
@@ -160,6 +177,13 @@ impl Outcome {
         out.push_str(&self.copies);
         out
     }
+}
+
+/// The machine's load averages over 1, 5 and 15 minutes, where the system says them (Linux).
+fn load_average() -> Option<String> {
+    let text = std::fs::read_to_string("/proc/loadavg").ok()?;
+    let three: Vec<&str> = text.split_whitespace().take(3).collect();
+    (three.len() == 3).then(|| three.join(" "))
 }
 
 /// One gate to run: its name, cargo's arguments, the target folder and whether it is Susi's
@@ -1240,6 +1264,29 @@ mod tests {
         assert_eq!(fails[0].0, "speed");
         assert!(fails[0].1.contains("OVER the 10-second line"));
         let rendered = over.render(Path::new("."));
+        let mut over = over;
+        over.gates.push(Gate {
+            name: "tests, no default features".into(),
+            command: "cargo nextest".into(),
+            seconds: 9.0,
+            ok: true,
+            tail: String::new(),
+        });
+        let said = over.over_line(Some("3.05 4.00 2.64"));
+        let slowest = said
+            .find("s  tests, no default features")
+            .unwrap_or(usize::MAX);
+        assert!(
+            slowest < said.find("s  tests\n").unwrap_or(0),
+            "the long pole first: {said}"
+        );
+        assert!(
+            said.ends_with("load average at the end: 3.05 4.00 2.64"),
+            "{said}"
+        );
+        for gate in &over.gates {
+            assert!(said.contains(&format!("s  {}", gate.name)), "{said}");
+        }
         assert!(rendered.contains("OVER the 10-second line"));
         assert!(rendered.contains("(refused)"));
     }
