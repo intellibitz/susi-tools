@@ -1,0 +1,25 @@
+{
+  "id": "T-CLOUDCLAUDE754EFB-1",
+  "title": "The lander measures the line on a warm run, as the mandate says",
+  "goal": "The lander's first gates run after checking out a new tip also compiles what the change touched (a change to the agent vault rebuilds most of Susi), so cloud ships were refused at 23.5-27.6 s (Board 9456, 9459, 9472) though the line is warm time. When every gate passed and only the clock went over, run the gates once more, warm, and judge the line on that run; a functional failure is never re-run.",
+  "vision": "V-48",
+  "size": "xs",
+  "deps": [],
+  "scope": [
+    "src/gates.rs",
+    "src/land.rs"
+  ],
+  "read": [],
+  "accept": {
+    "cmd": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--lib",
+      "gates"
+    ]
+  },
+  "created_by": "CLOUDCLAUDE754EFB",
+  "created_unix": 1795681370
+}
