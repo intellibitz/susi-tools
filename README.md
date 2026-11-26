@@ -140,7 +140,10 @@ Board, tasks and claims); the rules below are this repository's own.
     end-to-end walks, which its `gates` profile leaves out; T-CLOUDCLAUDE-6),
     and, for each workspace of its own inside the checkout that the change
     touches (a folder below the root whose `Cargo.toml` has a `[workspace]`
-    table), that workspace's `cargo fmt --check`, Clippy and tests by its own
+    table), or that depends by path on a package the change touches (its
+    path dependencies followed through the packages they name and what those
+    inherit from the root workspace, so a brick's change gates Susi Wall;
+    T-CLAUDE-454), that workspace's `cargo fmt --check`, Clippy and tests by its own
     manifest, its files left out of the root's format check, which knows none
     of its packages,
     must pass, wall printed separately (cold five-triple rebuilds took

@@ -25,6 +25,10 @@
 //! leaves out. They must pass; their wall is printed apart (the CEO, 2026-11-26: trim the suites
 //! so cloud gates fit 4 cores, with the walks apart; T-CLOUDCLAUDE-6).
 //!
+//! **A workspace apart (phase 2)** — a folder below the root whose `Cargo.toml` has a
+//! `[workspace]` table gets its own format, Clippy and tests when a change touches it, or touches
+//! a package it depends on by path, followed through the packages it names (T-CLAUDE-454).
+//!
 //! **Formatting** checks the packages a change touches since its merge base with `origin/main`
 //! (`cargo fmt --check -p …`): rustfmt formats file by file and `main` is formatted, so an
 //! untouched package cannot have changed. All of them when no base is known or a root file that
@@ -218,9 +222,20 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
     if nextest_profile(work, GATES_WALKS_PROFILE) {
         cross_steps.push(walks_step());
     }
-    // A workspace of its own inside the checkout is gated by itself when a change touches it.
+    // A workspace of its own inside the checkout is gated by itself when a change touches it, or
+    // touches a package it depends on by path (Susi Wall links every brick, T-CLAUDE-454).
     for apart in touched_files(work)
-        .map(|files| workspaces_apart(work, &files))
+        .map(|files| {
+            let mut all = workspaces_apart(work, &files);
+            all.extend(workspaces_depending(
+                work,
+                &files,
+                &tracked_workspaces_apart(work),
+            ));
+            all.sort();
+            all.dedup();
+            all
+        })
         .unwrap_or_default()
     {
         cross_steps.extend(apart_steps(&base, &apart));
@@ -454,6 +469,141 @@ fn workspaces_apart(work: &Path, files: &[String]) -> Vec<String> {
     found.sort();
     found.dedup();
     found
+}
+
+/// Every workspace apart the checkout tracks: each `Cargo.toml` below the root with a
+/// `[workspace]` table, by its folder.
+fn tracked_workspaces_apart(work: &Path) -> Vec<String> {
+    let Some(listed) = crate::git::Repo::open(work)
+        .ok()
+        .and_then(|repo| repo.try_read(&["ls-files", "*Cargo.toml"]))
+    else {
+        return Vec::new();
+    };
+    let mut found: Vec<String> = listed
+        .lines()
+        .filter(|l| l.contains('/'))
+        .filter_map(|manifest| workspace_apart(work, manifest))
+        .filter(|dir| work.join(dir).join("Cargo.toml").is_file())
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// The workspaces apart among `candidates` that depend by path, directly or through the packages
+/// they name, on a package `files` touch: a change to a brick is checked in the workspace that
+/// links it too, though no file of that workspace changed.
+fn workspaces_depending(work: &Path, files: &[String], candidates: &[String]) -> Vec<String> {
+    candidates
+        .iter()
+        .filter(|dir| {
+            let deps = path_closure(work, dir);
+            files.iter().any(|file| {
+                !file.starts_with(&format!("{dir}/"))
+                    && deps.iter().any(|dep| file.starts_with(&format!("{dep}/")))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+/// The package folders (from the checkout's root) the package in `dir` depends on by path, and
+/// those they depend on, each once: inline `path = "..."` entries, dependencies inherited from a
+/// workspace (`{ workspace = true }`) read in that workspace's manifest, and path patches.
+fn path_closure(work: &Path, dir: &str) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut queue = vec![dir.to_owned()];
+    while let Some(next) = queue.pop() {
+        let Ok(text) = std::fs::read_to_string(work.join(&next).join("Cargo.toml")) else {
+            continue;
+        };
+        let inherited = workspace_paths(work, &next);
+        for line in text.lines() {
+            let line = line.trim();
+            let Some((name, value)) = line.split_once('=') else {
+                continue;
+            };
+            let value = value.trim();
+            if !value.starts_with('{') {
+                continue;
+            }
+            let found = inline_path(value)
+                .and_then(|path| normal_join(&next, path))
+                .or_else(|| {
+                    value
+                        .contains("workspace = true")
+                        .then(|| inherited.iter().find(|(n, _)| n == name.trim()))
+                        .flatten()
+                        .map(|(_, path)| path.clone())
+                });
+            if let Some(found) = found {
+                if found != dir && !seen.contains(&found) {
+                    seen.push(found.clone());
+                    queue.push(found);
+                }
+            }
+        }
+    }
+    seen.sort();
+    seen
+}
+
+/// The `path` of an inline table (`{ path = "x", ... }`).
+fn inline_path(value: &str) -> Option<&str> {
+    let rest = &value[value.find("path")? + 4..];
+    let rest = rest
+        .trim_start()
+        .strip_prefix('=')?
+        .trim_start()
+        .strip_prefix('"')?;
+    rest.split('"').next()
+}
+
+/// The path dependencies the workspace `dir` inherits from declare, by name, as folders from the
+/// checkout's root: the nearest manifest at or above it with a `[workspace]` table.
+fn workspace_paths(work: &Path, dir: &str) -> Vec<(String, String)> {
+    let mut at = Path::new(dir).to_path_buf();
+    loop {
+        let rel = at.to_string_lossy().replace('\\', "/");
+        let text = std::fs::read_to_string(work.join(&at).join("Cargo.toml")).unwrap_or_default();
+        if text.lines().any(|l| {
+            let l = l.trim();
+            l == "[workspace]" || l.starts_with("[workspace.")
+        }) {
+            return text
+                .lines()
+                .filter_map(|line| {
+                    let (name, value) = line.trim().split_once('=')?;
+                    let path =
+                        inline_path(value.trim()).filter(|_| value.trim().starts_with('{'))?;
+                    Some((name.trim().to_owned(), normal_join(&rel, path)?))
+                })
+                .collect();
+        }
+        if !at.pop() {
+            return Vec::new();
+        }
+    }
+}
+
+/// `path` taken from the folder `from` (both from the checkout's root), `..` resolved; `None` when
+/// it leaves the checkout.
+fn normal_join(from: &str, path: &str) -> Option<String> {
+    let mut parts: Vec<&str> = from
+        .split('/')
+        .filter(|p| !p.is_empty() && *p != ".")
+        .collect();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            other => parts.push(other),
+        }
+    }
+    Some(parts.join("/"))
 }
 
 /// The steps that gate the workspace apart in `dir`: its format, its Clippy and its tests, by its
@@ -936,6 +1086,70 @@ mod tests {
             Some(Path::new("/t/apart/apart"))
         );
         assert!(steps.iter().all(|s| !s.cross));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A workspace apart that links a brick by path is gated when the brick changes, through
+    /// the packages it names and what they inherit from the main workspace; a change to docs
+    /// alone gates nothing apart (T-CLAUDE-454: Susi Wall broke on main from a brick's change).
+    #[test]
+    fn a_workspace_apart_is_gated_when_a_brick_it_links_by_path_changes() {
+        let dir = std::env::temp_dir().join(format!("susi-tools-apart-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (path, text) in [
+            (
+                "Cargo.toml",
+                "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.dependencies]\n\
+                 brick = { path = \"crates/brick\" }\nleaf = { path = \"crates/leaf\" }\n",
+            ),
+            (
+                "crates/catalogue/Cargo.toml",
+                "[package]\nname = \"catalogue\"\n\n[dependencies]\nbrick = { workspace = true }\n",
+            ),
+            (
+                "crates/brick/Cargo.toml",
+                "[package]\nname = \"brick\"\n\n[dependencies]\nleaf = { workspace = true, optional = true }\n",
+            ),
+            ("crates/leaf/Cargo.toml", "[package]\nname = \"leaf\"\n"),
+            ("crates/alone/Cargo.toml", "[package]\nname = \"alone\"\n"),
+            (
+                "desktop/Cargo.toml",
+                "[workspace]\n\n[package]\nname = \"wall\"\n\n[[bin]]\nname = \"wall\"\n\
+                 path = \"src/main.rs\"\n\n[dependencies]\n\
+                 catalogue = { path = \"../crates/catalogue\" }\n\n[patch.crates-io]\n\
+                 idna = { path = \"../vendor/idna\" }\n",
+            ),
+        ] {
+            let p = dir.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        }
+        assert_eq!(
+            path_closure(&dir, "desktop"),
+            [
+                "crates/brick",
+                "crates/catalogue",
+                "crates/leaf",
+                "vendor/idna"
+            ]
+        );
+        let apart = ["desktop".to_owned()];
+        let gated = |list: &[&str]| {
+            let files: Vec<String> = list.iter().map(|f| (*f).to_owned()).collect();
+            workspaces_depending(&dir, &files, &apart)
+        };
+        assert_eq!(gated(&["crates/leaf/src/lib.rs"]), ["desktop"]);
+        assert_eq!(
+            gated(&["docs/desktop.md", "crates/catalogue/src/lib.rs"]),
+            ["desktop"]
+        );
+        assert!(gated(&["docs/desktop.md", "README.md"]).is_empty());
+        assert!(gated(&["crates/alone/src/lib.rs"]).is_empty());
+        assert!(
+            gated(&["desktop/src/main.rs"]).is_empty(),
+            "its own files gate it already"
+        );
+        assert_eq!(normal_join("desktop", "../../x"), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
