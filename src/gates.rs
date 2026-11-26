@@ -18,6 +18,17 @@
 //! five triples took **38–40.5 s** on CachyOS (T-CURSOR-2): unfit for the 10-second wall. It
 //! still must pass, and its wall is printed, but it does not count toward the line (the mandate's
 //! measured gate set is phase 1). Keep `CARGO_TARGET_DIR` warm so phase 2 stays a second or two.
+//!
+//! **The walks (phase 2, apart)** — when `.config/nextest.toml` names the profile `gates-walks`,
+//! the whole suite with it runs beside product-target Clippy: the repository's end-to-end walks
+//! (its delivery's dry runs, its hosts' scripts, an IDE's toolchain), which its `gates` profile
+//! leaves out. They must pass; their wall is printed apart (the CEO, 2026-11-26: trim the suites
+//! so cloud gates fit 4 cores, with the walks apart; T-CLOUDCLAUDE-6).
+//!
+//! **Formatting** checks the packages a change touches since its merge base with `origin/main`
+//! (`cargo fmt --check -p …`): rustfmt formats file by file and `main` is formatted, so an
+//! untouched package cannot have changed. All of them when no base is known or a root file that
+//! steers rustfmt changed (`rustfmt.toml`, `rust-toolchain`); none when no Rust or manifest did.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -106,7 +117,7 @@ impl Outcome {
         );
         if let Some(cross) = self.cross_seconds {
             out.push_str(&format!(
-                "; cross {cross:.1} s (apart from the {LINE_SECONDS:.0}-second line)"
+                "; cross and walks {cross:.1} s (apart from the {LINE_SECONDS:.0}-second line)"
             ));
         }
         out.push('\n');
@@ -173,8 +184,8 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
         .unwrap_or_else(|| work.join("target"));
     let featured = featured_packages(work);
     let Plan {
-        line_lanes,
-        cross_steps,
+        mut line_lanes,
+        mut cross_steps,
     } = plan(
         &base,
         featured.as_deref(),
@@ -185,6 +196,12 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
                 .then_some(GATES_NO_DEFAULT_PROFILE),
         },
     );
+    if let Some(format) = line_lanes[2].iter_mut().find(|s| s.name == "format") {
+        format.args = format_args(touched_packages(work).as_deref());
+    }
+    if nextest_profile(work, GATES_WALKS_PROFILE) {
+        cross_steps.push(walks_step());
+    }
 
     let line_started = Instant::now();
     let mut gates = run_lanes(work, &line_lanes);
@@ -288,6 +305,127 @@ fn run_lanes(work: &Path, lanes: &[Vec<Step>]) -> Vec<Gate> {
 
 /// The nextest profile the whole suite runs with in the gates, when the repository names it.
 pub const GATES_PROFILE: &str = "gates";
+/// The nextest profile of the walks, run apart from the line when the repository names it.
+pub const GATES_WALKS_PROFILE: &str = "gates-walks";
+
+/// The walks: the whole suite with the profile `gates-walks`, in phase 2. A profile that matches
+/// nothing passes, as an empty walk proves nothing wrong.
+fn walks_step() -> Step {
+    let mut args = whole_suite_args(Some(GATES_WALKS_PROFILE));
+    args.push("--no-tests=pass".to_owned());
+    Step {
+        name: "walks",
+        args,
+        target: None,
+        cross: false,
+    }
+}
+
+/// `cargo fmt`'s arguments for `packages`: every package when `None`, those named otherwise,
+/// and nothing to check (`cargo fmt --version`) when the list is empty.
+fn format_args(packages: Option<&[String]>) -> Vec<String> {
+    match packages {
+        None => owned(["fmt", "--all", "--check"]),
+        Some([]) => owned(["fmt", "--version"]),
+        Some(packages) => {
+            let mut args = owned(["fmt", "--check"]);
+            for package in packages {
+                args.extend(["-p".to_owned(), package.clone()]);
+            }
+            args
+        }
+    }
+}
+
+/// The files a change touches since its merge base with `origin/main`, staged, unstaged and
+/// untracked; `None` when there is no such base.
+fn touched_files(work: &Path) -> Option<Vec<String>> {
+    let repo = crate::git::Repo::open(work).ok()?;
+    let base = repo
+        .try_read(&["merge-base", "HEAD", "refs/remotes/origin/main"])?
+        .trim()
+        .to_owned();
+    if base.is_empty() {
+        return None;
+    }
+    let mut files: Vec<String> = repo
+        .try_read(&["diff", "--name-only", "--no-renames", &base])?
+        .lines()
+        .chain(
+            repo.try_read(&["ls-files", "--others", "--exclude-standard"])
+                .unwrap_or_default()
+                .lines(),
+        )
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect();
+    files.sort();
+    files.dedup();
+    Some(files)
+}
+
+/// The packages whose Rust sources or manifests `files` (paths from the checkout's root) touch,
+/// each the package of the nearest `Cargo.toml` above the file; `None` (check every package) when
+/// a file that steers rustfmt for all of them changed.
+fn packages_of(work: &Path, files: &[String]) -> Option<Vec<String>> {
+    const EVERYWHERE: [&str; 4] = [
+        "rustfmt.toml",
+        ".rustfmt.toml",
+        "rust-toolchain",
+        "rust-toolchain.toml",
+    ];
+    let mut packages = Vec::new();
+    for file in files {
+        let path = Path::new(file);
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if EVERYWHERE.contains(&name) {
+            return None;
+        }
+        let rust = path.extension().is_some_and(|e| e == "rs") || name == "Cargo.toml";
+        if !rust {
+            continue;
+        }
+        let mut dir = work.join(path);
+        while dir.pop() {
+            let manifest = dir.join("Cargo.toml");
+            if let Some(package) = package_name(&manifest) {
+                packages.push(package);
+                break;
+            }
+            if dir == work {
+                break;
+            }
+        }
+    }
+    packages.sort();
+    packages.dedup();
+    Some(packages)
+}
+
+/// The `[package]` name of the manifest at `path`, if it names one.
+fn package_name(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut in_package = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_package = line == "[package]";
+            continue;
+        }
+        if in_package {
+            if let Some(value) = line.strip_prefix("name") {
+                let value = value.trim_start().strip_prefix('=')?.trim();
+                return Some(value.trim_matches('"').to_owned());
+            }
+        }
+    }
+    None
+}
+
+/// The packages `cargo fmt --check` looks at: those a change touches, or `None` for all.
+fn touched_packages(work: &Path) -> Option<Vec<String>> {
+    packages_of(work, &touched_files(work)?)
+}
 /// The nextest profile the suite without default features runs with, when the repository names it.
 pub const GATES_NO_DEFAULT_PROFILE: &str = "gates-no-default-features";
 
@@ -554,6 +692,66 @@ mod tests {
         assert!(!ok_outcome(4.0, Some(45.0)).measure_again());
     }
 
+    /// The walks run apart, with their profile, and a profile matching nothing passes; fmt looks
+    /// at the packages a change touches, all of them when rustfmt's own settings change.
+    #[test]
+    fn the_walks_run_apart_and_fmt_checks_the_packages_a_change_touches() {
+        let walks = walks_step();
+        assert_eq!(walks.name, "walks");
+        assert!(!walks.cross);
+        assert!(walks.args.ends_with(&[
+            "--profile".to_owned(),
+            "gates-walks".to_owned(),
+            "--no-tests=pass".to_owned()
+        ]));
+
+        assert_eq!(format_args(None), ["fmt", "--all", "--check"]);
+        assert_eq!(format_args(Some(&[])), ["fmt", "--version"]);
+        assert_eq!(
+            format_args(Some(&["a".to_owned(), "b-c".to_owned()])),
+            ["fmt", "--check", "-p", "a", "-p", "b-c"]
+        );
+
+        let dir = std::env::temp_dir().join(format!("susi-tools-fmt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (path, text) in [
+            ("Cargo.toml", "[workspace]\nmembers = [\"crates/a\"]\n\n[package]\nname = \"root\"\n"),
+            ("crates/a/Cargo.toml", "[package]\nname = \"pkg-a\"\nversion = \"0.1.0\"\n\n[dependencies]\nname = \"x\"\n"),
+            ("crates/a/src/lib.rs", ""),
+            ("crates/a/src/deep/m.rs", ""),
+            ("src/main.rs", ""),
+        ] {
+            let p = dir.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        }
+        let files = |list: &[&str]| list.iter().map(|f| (*f).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            packages_of(
+                &dir,
+                &files(&["crates/a/src/deep/m.rs", "docs/x.md", "src/main.rs"])
+            ),
+            Some(vec!["pkg-a".to_owned(), "root".to_owned()])
+        );
+        assert_eq!(
+            packages_of(&dir, &files(&["crates/a/Cargo.toml"])),
+            Some(vec!["pkg-a".to_owned()])
+        );
+        assert_eq!(
+            packages_of(&dir, &files(&["docs/x.md", "README.md"])),
+            Some(vec![])
+        );
+        assert_eq!(
+            packages_of(&dir, &files(&["src/main.rs", "rustfmt.toml"])),
+            None
+        );
+        assert_eq!(
+            package_name(&dir.join("crates/a/Cargo.toml")).as_deref(),
+            Some("pkg-a")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     fn lane_names(lane: &[Step]) -> Vec<&str> {
         lane.iter().map(|s| s.name).collect()
     }
@@ -614,7 +812,7 @@ mod tests {
         assert!(under.gates_ok() && under.within_line() && under.passed());
         let rendered = under.render(Path::new("."));
         assert!(rendered.contains("under the 10-second line"));
-        assert!(rendered.contains("cross 40.5 s (apart from the 10-second line)"));
+        assert!(rendered.contains("cross and walks 40.5 s (apart from the 10-second line)"));
     }
 
     /// Over the 10-second line refuses even when every functional gate passed (T-CURSOR-1): a loud

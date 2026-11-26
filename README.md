@@ -130,11 +130,16 @@ Board, tasks and claims); the rules below are this repository's own.
     whole suite with nextest profile `gates` when `.config/nextest.toml` names
     one; the featured packages' suite then native Clippy with
     `--no-default-features` in `<target>/no-default-features`; and host
-    `fmt` + Clippy. This repository's `gates` profile leaves nested
+    `fmt` + Clippy, `fmt` only for the packages a change touches since its
+    merge base with `origin/main` (all of them when no base is known or
+    `rustfmt.toml` or `rust-toolchain` changed). This repository's `gates` profile leaves nested
     gates/land and `speed --cold` out of the ship wall (they stay on
     default/accept; T-CURSOR-4). **Phase 2** (apart): Clippy for every
-    `--target` with `SUSI_CROSS_CHECK=1`, must pass, wall printed separately
-    (cold five-triple rebuilds took 38–40 s; T-CURSOR-2). It names each
+    `--target` with `SUSI_CROSS_CHECK=1`, and the walks, the whole suite with
+    nextest profile `gates-walks` when the repository names one (its
+    end-to-end walks, which its `gates` profile leaves out; T-CLOUDCLAUDE-6),
+    must pass, wall printed separately (cold five-triple rebuilds took
+    38–40 s; T-CURSOR-2). It names each
     gate's time, records `refs/susi-tools/gated/<tree>` when every gate passes
     inside the 10-second line (revoking it otherwise) so a direct `ship` to
     `main` requires a passing run, and refuses when phase 1 is over the
