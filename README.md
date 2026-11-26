@@ -138,6 +138,11 @@ Board, tasks and claims); the rules below are this repository's own.
     `--target` with `SUSI_CROSS_CHECK=1`, and the walks, the whole suite with
     nextest profile `gates-walks` when the repository names one (its
     end-to-end walks, which its `gates` profile leaves out; T-CLOUDCLAUDE-6),
+    and, for each workspace of its own inside the checkout that the change
+    touches (a folder below the root whose `Cargo.toml` has a `[workspace]`
+    table), that workspace's `cargo fmt --check`, Clippy and tests by its own
+    manifest, its files left out of the root's format check, which knows none
+    of its packages,
     must pass, wall printed separately (cold five-triple rebuilds took
     38–40 s; T-CURSOR-2). Each suite runs with twice the cores as test
     threads and without nextest's double spawn (`NEXTEST_TEST_THREADS`,

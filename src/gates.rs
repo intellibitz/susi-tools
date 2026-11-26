@@ -202,6 +202,13 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
     if nextest_profile(work, GATES_WALKS_PROFILE) {
         cross_steps.push(walks_step());
     }
+    // A workspace of its own inside the checkout is gated by itself when a change touches it.
+    for apart in touched_files(work)
+        .map(|files| workspaces_apart(work, &files))
+        .unwrap_or_default()
+    {
+        cross_steps.extend(apart_steps(&base, &apart));
+    }
 
     let line_started = Instant::now();
     let mut gates = run_lanes(work, &line_lanes);
@@ -385,6 +392,10 @@ fn packages_of(work: &Path, files: &[String]) -> Option<Vec<String>> {
         if !rust {
             continue;
         }
+        // A file of a workspace apart is no package of this one: its own steps check it.
+        if workspace_apart(work, file).is_some() {
+            continue;
+        }
         let mut dir = work.join(path);
         while dir.pop() {
             let manifest = dir.join("Cargo.toml");
@@ -400,6 +411,88 @@ fn packages_of(work: &Path, files: &[String]) -> Option<Vec<String>> {
     packages.sort();
     packages.dedup();
     Some(packages)
+}
+
+/// The workspace of its own that `file` (a path from the checkout's root) belongs to, when it is
+/// not the checkout's: the nearest folder above it, below the root, whose `Cargo.toml` has a
+/// `[workspace]` table. Such a workspace is built apart (a toolkit the main one must not pay
+/// for, say), so `cargo` run at the root knows none of its packages.
+fn workspace_apart(work: &Path, file: &str) -> Option<String> {
+    let mut dir = Path::new(file).parent()?;
+    while !dir.as_os_str().is_empty() {
+        let manifest = std::fs::read_to_string(work.join(dir).join("Cargo.toml"));
+        if manifest.is_ok_and(|text| text.lines().any(|line| line.trim() == "[workspace]")) {
+            return Some(dir.to_string_lossy().replace('\\', "/"));
+        }
+        dir = dir.parent()?;
+    }
+    None
+}
+
+/// The workspaces apart that `files` touch, each once.
+fn workspaces_apart(work: &Path, files: &[String]) -> Vec<String> {
+    let mut found: Vec<String> = files
+        .iter()
+        .filter_map(|file| workspace_apart(work, file))
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// The steps that gate the workspace apart in `dir`: its format, its Clippy and its tests, by its
+/// own manifest, built in a folder of its own under `base`. They run in phase 2, apart from the
+/// line and required all the same.
+fn apart_steps(base: &Path, dir: &str) -> Vec<Step> {
+    let manifest = format!("{dir}/Cargo.toml");
+    let target = Some(base.join("apart").join(dir));
+    let with = |args: &[&str]| -> Vec<String> {
+        args.iter()
+            .map(|arg| {
+                if *arg == "<manifest>" {
+                    manifest.clone()
+                } else {
+                    (*arg).to_owned()
+                }
+            })
+            .collect()
+    };
+    vec![
+        Step {
+            name: "format, a workspace apart",
+            args: with(&["fmt", "--check", "--manifest-path", "<manifest>"]),
+            target: None,
+            cross: false,
+        },
+        Step {
+            name: "clippy, a workspace apart",
+            args: with(&[
+                "clippy",
+                "--manifest-path",
+                "<manifest>",
+                "--all-targets",
+                "--offline",
+                "--locked",
+                "--",
+                "-D",
+                "warnings",
+            ]),
+            target: target.clone(),
+            cross: false,
+        },
+        Step {
+            name: "tests, a workspace apart",
+            args: with(&[
+                "test",
+                "--offline",
+                "--locked",
+                "--manifest-path",
+                "<manifest>",
+            ]),
+            target,
+            cross: false,
+        },
+    ]
 }
 
 /// The `[package]` name of the manifest at `path`, if it names one.
@@ -774,6 +867,59 @@ mod tests {
             package_name(&dir.join("crates/a/Cargo.toml")).as_deref(),
             Some("pkg-a")
         );
+
+        // A workspace of its own inside the checkout is not the main one's package: its files
+        // are left out of the main format check and gated by its own steps, in phase 2.
+        for (path, text) in [
+            (
+                "apart/Cargo.toml",
+                "[workspace]\n\n[package]\nname = \"native\"\n",
+            ),
+            ("apart/src/main.rs", ""),
+            ("apart/src/views/one.rs", ""),
+        ] {
+            let p = dir.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        }
+        let touched = files(&["apart/src/views/one.rs", "apart/Cargo.toml", "src/main.rs"]);
+        assert_eq!(packages_of(&dir, &touched), Some(vec!["root".to_owned()]));
+        assert_eq!(workspaces_apart(&dir, &touched), ["apart"]);
+        assert_eq!(workspace_apart(&dir, "crates/a/src/lib.rs"), None);
+        assert_eq!(
+            workspace_apart(&dir, "src/main.rs"),
+            None,
+            "the root is the main workspace"
+        );
+        let steps = apart_steps(Path::new("/t"), "apart");
+        assert_eq!(
+            lane_names(&steps),
+            [
+                "format, a workspace apart",
+                "clippy, a workspace apart",
+                "tests, a workspace apart"
+            ]
+        );
+        assert_eq!(
+            steps[2].args,
+            [
+                "test",
+                "--offline",
+                "--locked",
+                "--manifest-path",
+                "apart/Cargo.toml"
+            ]
+        );
+        assert_eq!(
+            steps[1].args[..3],
+            ["clippy", "--manifest-path", "apart/Cargo.toml"]
+        );
+        assert_eq!(steps[0].target, None);
+        assert_eq!(
+            steps[2].target.as_deref(),
+            Some(Path::new("/t/apart/apart"))
+        );
+        assert!(steps.iter().all(|s| !s.cross));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
