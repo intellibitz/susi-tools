@@ -139,7 +139,10 @@ Board, tasks and claims); the rules below are this repository's own.
     nextest profile `gates-walks` when the repository names one (its
     end-to-end walks, which its `gates` profile leaves out; T-CLOUDCLAUDE-6),
     must pass, wall printed separately (cold five-triple rebuilds took
-    38–40 s; T-CURSOR-2). It names each
+    38–40 s; T-CURSOR-2). Each suite runs with twice the cores as test
+    threads and without nextest's double spawn (`NEXTEST_TEST_THREADS`,
+    `NEXTEST_DOUBLE_SPAWN=0`, unless the caller sets them; T-CLOUDCLAUDE-7).
+    It names each
     gate's time, records `refs/susi-tools/gated/<tree>` when every gate passes
     inside the 10-second line (revoking it otherwise) so a direct `ship` to
     `main` requires a passing run, and refuses when phase 1 is over the

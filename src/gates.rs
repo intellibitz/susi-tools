@@ -601,7 +601,8 @@ fn run_step(work: &Path, step: &Step) -> Gate {
     if step.cross {
         cmd.env("SUSI_CROSS_CHECK", "1");
     }
-    let threads = if step.args.first().map(String::as_str) == Some("nextest") {
+    let nextest = step.args.first().map(String::as_str) == Some("nextest");
+    let threads = if nextest {
         let cores = std::thread::available_parallelism().map_or(1, usize::from);
         test_threads(cores, std::env::var_os("NEXTEST_TEST_THREADS").as_deref())
     } else {
@@ -610,12 +611,23 @@ fn run_step(work: &Path, step: &Step) -> Gate {
     if let Some(threads) = &threads {
         cmd.env("NEXTEST_TEST_THREADS", threads);
     }
+    let spawn = if nextest {
+        double_spawn(std::env::var_os("NEXTEST_DOUBLE_SPAWN").as_deref())
+    } else {
+        None
+    };
+    if let Some(spawn) = spawn {
+        cmd.env("NEXTEST_DOUBLE_SPAWN", spawn);
+    }
     let mut command = format!("cargo {}", step.args.join(" "));
     if let Some(target) = &step.target {
         command = format!("CARGO_TARGET_DIR={} {command}", target.display());
     }
     if let Some(threads) = &threads {
         command = format!("NEXTEST_TEST_THREADS={threads} {command}");
+    }
+    if let Some(spawn) = spawn {
+        command = format!("NEXTEST_DOUBLE_SPAWN={spawn} {command}");
     }
     if step.cross {
         command = format!("SUSI_CROSS_CHECK=1 {command}");
@@ -655,6 +667,19 @@ fn test_threads(cores: usize, named: Option<&std::ffi::OsStr>) -> Option<String>
     match named {
         Some(_) => None,
         None => Some(cores.max(1).saturating_mul(2).to_string()),
+    }
+}
+
+/// nextest's double spawn, unless `named` (the caller's `NEXTEST_DOUBLE_SPAWN`) says: off. nextest
+/// starts itself again before each test so that Ctrl-Z in a terminal stops the test too; the gates
+/// run no terminal. On a cloud VM's 4 cores it was about 1.5 of the 21 s of processor time of
+/// Susi's customer suite (352 starts of nextest's 32 MB program), and Susi's phase 1 took 8.1 to
+/// 8.4 s without it, 9.4 to 10.0 s with it (Susi's docs/speed.md, "The walks run apart from the
+/// line"; T-CLOUDCLAUDE-7).
+fn double_spawn(named: Option<&std::ffi::OsStr>) -> Option<&'static str> {
+    match named {
+        Some(_) => None,
+        None => Some("0"),
     }
 }
 
@@ -762,6 +787,12 @@ mod tests {
         assert_eq!(test_threads(28, None).as_deref(), Some("56"));
         assert_eq!(test_threads(0, None).as_deref(), Some("2"));
         assert_eq!(test_threads(4, Some(std::ffi::OsStr::new("3"))), None);
+    }
+
+    #[test]
+    fn each_suite_runs_without_nextests_double_spawn_unless_told() {
+        assert_eq!(double_spawn(None), Some("0"));
+        assert_eq!(double_spawn(Some(std::ffi::OsStr::new("1"))), None);
     }
 
     /// Customer native Clippy runs after the customer suite in the same folder (T-CURSOR-3).
