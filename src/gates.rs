@@ -192,6 +192,8 @@ fn load_average() -> Option<String> {
 struct Step {
     name: &'static str,
     args: Vec<String>,
+    /// Cargo runs from the checkout unless this step names a directory within it.
+    directory: Option<PathBuf>,
     target: Option<PathBuf>,
     cross: bool,
 }
@@ -200,6 +202,7 @@ fn step(name: &'static str, args: &[&str], target: Option<&Path>, cross: bool) -
     Step {
         name,
         args: args.iter().map(|a| (*a).to_owned()).collect(),
+        directory: None,
         target: target.map(Path::to_path_buf),
         cross,
     }
@@ -379,6 +382,7 @@ fn walks_step() -> Step {
     Step {
         name: "walks",
         args,
+        directory: None,
         target: None,
         cross: false,
     }
@@ -650,7 +654,9 @@ fn apart_steps(base: &Path, dir: &str, targets: &[String]) -> Vec<Step> {
     let mut steps = vec![
         Step {
             name: "format, a workspace apart",
-            args: with(&["fmt", "--check", "--manifest-path", "<manifest>"]),
+            // From the workspace directory rustfmt selects all of its member packages.
+            args: owned(["fmt", "--check"]),
+            directory: Some(PathBuf::from(dir)),
             target: None,
             cross: false,
         },
@@ -667,6 +673,7 @@ fn apart_steps(base: &Path, dir: &str, targets: &[String]) -> Vec<Step> {
                 "-D",
                 "warnings",
             ]),
+            directory: None,
             target: target.clone(),
             cross: false,
         },
@@ -679,6 +686,7 @@ fn apart_steps(base: &Path, dir: &str, targets: &[String]) -> Vec<Step> {
                 "--manifest-path",
                 "<manifest>",
             ]),
+            directory: None,
             target,
             cross: false,
         },
@@ -689,6 +697,7 @@ fn apart_steps(base: &Path, dir: &str, targets: &[String]) -> Vec<Step> {
         steps.push(Step {
             name: "clippy, every product target, a workspace apart",
             args: host_clippy_args(&flags),
+            directory: None,
             target: Some(base.join("apart-cross").join(dir)),
             cross: true,
         });
@@ -832,6 +841,7 @@ fn plan(
     let tests = vec![Step {
         name: "tests",
         args: whole_suite_args(profiles.whole),
+        directory: None,
         target: None,
         cross: false,
     }];
@@ -840,6 +850,7 @@ fn plan(
     lints.push(Step {
         name: "clippy",
         args: host_clippy_args(&[]),
+        directory: None,
         target: None,
         cross: false,
     });
@@ -849,12 +860,14 @@ fn plan(
         customer_lane.push(Step {
             name: "tests, no default features",
             args: customer_suite_args(packages, profiles.no_default),
+            directory: None,
             target: Some(customer.clone()),
             cross: false,
         });
         customer_lane.push(Step {
             name: "clippy, no default features",
             args: customer_clippy_args(Some(packages), &[]),
+            directory: None,
             target: Some(customer.clone()),
             cross: false,
         });
@@ -865,6 +878,7 @@ fn plan(
         cross_steps.push(Step {
             name: "clippy, every product target",
             args: host_clippy_args(&cross_refs),
+            directory: None,
             target: None,
             cross: true,
         });
@@ -872,6 +886,7 @@ fn plan(
             cross_steps.push(Step {
                 name: "clippy, every product target, no default features",
                 args: customer_clippy_args(featured, &cross_refs),
+                directory: None,
                 target: Some(customer.clone()),
                 cross: true,
             });
@@ -886,8 +901,9 @@ fn plan(
 
 fn run_step(work: &Path, step: &Step) -> Gate {
     let mut cmd = Command::new("cargo");
+    let directory = step.directory.as_ref().map(|dir| work.join(dir));
     cmd.args(&step.args)
-        .current_dir(work)
+        .current_dir(directory.as_deref().unwrap_or(work))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -916,6 +932,9 @@ fn run_step(work: &Path, step: &Step) -> Gate {
         cmd.env("NEXTEST_DOUBLE_SPAWN", spawn);
     }
     let mut command = format!("cargo {}", step.args.join(" "));
+    if let Some(dir) = &step.directory {
+        command = format!("{command} (in {})", dir.display());
+    }
     if let Some(target) = &step.target {
         command = format!("CARGO_TARGET_DIR={} {command}", target.display());
     }
@@ -1124,6 +1143,55 @@ mod tests {
         );
         assert!(steps.iter().all(|s| !s.cross));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn nested_format_checks_the_members_of_virtual_and_package_workspaces() {
+        let root =
+            std::env::temp_dir().join(format!("susi-tools-nested-fmt-{}", std::process::id()));
+        let nested = root.join("nested workspace");
+        let workspace = "[workspace]\nresolver = \"2\"\nmembers = [\"primary\", \"extra\"]\ndefault-members = [\"primary\"]\n";
+        let package = |name: &str| {
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
+        };
+        let good = "pub fn value() -> u32 {\n    4\n}\n";
+        let bad = "pub fn value()->u32{4}\n";
+        let _ = std::fs::remove_dir_all(&root);
+        for (dir, name, rest, source) in [
+            (
+                nested.join("primary"),
+                "primary",
+                "\n[dependencies]\noutside = { path = \"../../outside\" }\n",
+                good,
+            ),
+            (nested.join("extra"), "extra", "", good),
+            (root.join("outside"), "outside", "\n[workspace]\n", bad),
+        ] {
+            std::fs::create_dir_all(dir.join("src")).unwrap();
+            std::fs::write(dir.join("Cargo.toml"), package(name) + rest).unwrap();
+            std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        }
+        let manifest = nested.join("Cargo.toml");
+        let extra = nested.join("extra/src/lib.rs");
+        let format = apart_steps(&root.join("target"), "nested workspace", &[]).remove(0);
+        let run = || run_step(&root, &format);
+        std::fs::create_dir_all(nested.join("src")).unwrap();
+        std::fs::write(nested.join("src/lib.rs"), good).unwrap();
+
+        for contents in [workspace.to_owned(), package("nested-root") + workspace] {
+            std::fs::write(&manifest, contents).unwrap();
+            std::fs::write(&extra, good).unwrap();
+            let clean = run();
+            assert!(clean.ok, "{}", clean.tail);
+            assert_eq!(clean.command, "cargo fmt --check (in nested workspace)");
+            std::fs::write(&extra, bad).unwrap();
+            let dirty = run();
+            assert!(!dirty.ok, "the unformatted non-default member passed");
+            let diff = dirty.tail.replace('\\', "/");
+            assert!(diff.contains("extra/src/lib.rs"), "{diff}");
+            assert!(!diff.contains("outside/src/lib.rs"), "{diff}");
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

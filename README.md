@@ -138,8 +138,11 @@ Board, tasks and claims); the rules below are this repository's own.
     `SUSI_CROSS_CHECK=1`. When the repository defines the nextest profile
     `gates-walks`, this phase also runs the end-to-end walks excluded from the
     `gates` profile (T-CLOUDCLAUDE-6). A folder below the root whose `Cargo.toml`
-    has a `[workspace]` table gets its own format check, host Clippy and tests
-    by its own manifest. The root format check leaves its files to that check.
+    has a `[workspace]` table gets its own format check, host Clippy and tests.
+    The format check runs `cargo fmt --check` from that folder and checks its
+    member packages, including those of a virtual manifest. The gate output
+    names the folder. The checkout's root format check leaves these files to
+    their workspace. Host Clippy and tests use the workspace's manifest.
     A change selects the workspace when it touches the workspace directly or
     touches one of its path dependencies, including transitive dependencies
     and those inherited from the root workspace (T-CLAUDE-454). With `--target`,
