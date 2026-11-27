@@ -28,6 +28,7 @@
 //! **A workspace apart (phase 2)** — a folder below the root whose `Cargo.toml` has a
 //! `[workspace]` table gets its own format, Clippy and tests when a change touches it, or touches
 //! a package it depends on by path, followed through the packages it names (T-CLAUDE-454).
+//! Its members also run Clippy for every requested target with `SUSI_CROSS_CHECK=1`.
 //!
 //! **Formatting** checks the packages a change touches since its merge base with `origin/main`
 //! (`cargo fmt --check -p …`): rustfmt formats file by file and `main` is formatted, so an
@@ -57,7 +58,7 @@ pub struct Outcome {
     pub gates: Vec<Gate>,
     /// Phase 1 wall clock (suites + native lints): the 10-second line.
     pub seconds: f64,
-    /// Phase 2 wall clock (product-target Clippy), reported apart; `None` when no `--target`.
+    /// Phase 2 wall clock for cross Clippy, walks and nested workspaces. `None` when all are absent.
     pub cross_seconds: Option<f64>,
     copies: String,
 }
@@ -217,8 +218,8 @@ pub fn run_warm(work: &Path, targets: &[String]) -> Result<(Outcome, Option<f64>
     Ok((run(work, targets)?, Some(before)))
 }
 
-/// Runs every gate of the Cargo checkout at `work`. Phase 1 (10-second line) is the suites and
-/// native lints; phase 2 is product-target Clippy when `targets` is non-empty (apart).
+/// Runs every gate of the Cargo checkout at `work`. Phase 1 times the suites and native lints
+/// against the 10-second line. Phase 2 times cross Clippy, walks and nested workspaces separately.
 pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
     if !work.join("Cargo.toml").is_file() {
         return Err(format!("not a Cargo checkout: {}", work.display()));
@@ -262,7 +263,7 @@ pub fn run(work: &Path, targets: &[String]) -> Result<Outcome, String> {
         })
         .unwrap_or_default()
     {
-        cross_steps.extend(apart_steps(&base, &apart));
+        cross_steps.extend(apart_steps(&base, &apart, targets));
     }
 
     let line_started = Instant::now();
@@ -630,10 +631,9 @@ fn normal_join(from: &str, path: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-/// The steps that gate the workspace apart in `dir`: its format, its Clippy and its tests, by its
-/// own manifest, built in a folder of its own under `base`. They run in phase 2, apart from the
-/// line and required all the same.
-fn apart_steps(base: &Path, dir: &str) -> Vec<Step> {
+/// Required phase-2 checks for the workspace in `dir`. Cross Clippy uses a separate build folder
+/// so it can run alongside the host checks.
+fn apart_steps(base: &Path, dir: &str, targets: &[String]) -> Vec<Step> {
     let manifest = format!("{dir}/Cargo.toml");
     let target = Some(base.join("apart").join(dir));
     let with = |args: &[&str]| -> Vec<String> {
@@ -647,7 +647,7 @@ fn apart_steps(base: &Path, dir: &str) -> Vec<Step> {
             })
             .collect()
     };
-    vec![
+    let mut steps = vec![
         Step {
             name: "format, a workspace apart",
             args: with(&["fmt", "--check", "--manifest-path", "<manifest>"]),
@@ -682,7 +682,18 @@ fn apart_steps(base: &Path, dir: &str) -> Vec<Step> {
             target,
             cross: false,
         },
-    ]
+    ];
+    if !targets.is_empty() {
+        let mut flags = vec!["--manifest-path", manifest.as_str()];
+        flags.extend(target_flags(targets));
+        steps.push(Step {
+            name: "clippy, every product target, a workspace apart",
+            args: host_clippy_args(&flags),
+            target: Some(base.join("apart-cross").join(dir)),
+            cross: true,
+        });
+    }
+    steps
 }
 
 /// The `[package]` name of the manifest at `path`, if it names one.
@@ -755,6 +766,12 @@ fn owned<const N: usize>(args: [&str; N]) -> Vec<String> {
     args.iter().map(|a| (*a).to_owned()).collect()
 }
 
+fn target_flags(targets: &[String]) -> impl Iterator<Item = &str> {
+    targets
+        .iter()
+        .flat_map(|target| ["--target", target.as_str()])
+}
+
 fn host_clippy_args(extra: &[&str]) -> Vec<String> {
     let mut args = owned([
         "clippy",
@@ -810,11 +827,7 @@ fn plan(
     profiles: Profiles<'_>,
 ) -> Plan {
     let customer = base.join("no-default-features");
-    let cross: Vec<String> = targets
-        .iter()
-        .flat_map(|t| ["--target".to_owned(), t.clone()])
-        .collect();
-    let cross_refs: Vec<&str> = cross.iter().map(String::as_str).collect();
+    let cross_refs: Vec<_> = target_flags(targets).collect();
 
     let tests = vec![Step {
         name: "tests",
@@ -1081,7 +1094,7 @@ mod tests {
             None,
             "the root is the main workspace"
         );
-        let steps = apart_steps(Path::new("/t"), "apart");
+        let steps = apart_steps(Path::new("/t"), "apart", &[]);
         assert_eq!(
             lane_names(&steps),
             [
@@ -1111,6 +1124,47 @@ mod tests {
         );
         assert!(steps.iter().all(|s| !s.cross));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn apart_cross_clippy_checks_the_whole_workspace_for_each_requested_target() {
+        let base = Path::new("/t");
+        let dir = "nested/ui";
+        let targets = [
+            "aarch64-apple-ios".to_owned(),
+            "aarch64-linux-android".to_owned(),
+        ];
+        let host = apart_steps(base, dir, &[]);
+        let steps = apart_steps(base, dir, &targets);
+        assert_eq!(steps.len(), host.len() + 1);
+        for (actual, expected) in steps.iter().zip(&host) {
+            assert_eq!(actual.name, expected.name);
+            assert_eq!(actual.args, expected.args);
+            assert_eq!(actual.target, expected.target);
+            assert!(!actual.cross);
+        }
+        let cross = steps.last().unwrap();
+        assert!(cross.cross);
+        assert_eq!(cross.target, Some(base.join("apart-cross").join(dir)));
+        assert_eq!(
+            cross.args,
+            [
+                "clippy",
+                "--workspace",
+                "--all-targets",
+                "--offline",
+                "--locked",
+                "--manifest-path",
+                "nested/ui/Cargo.toml",
+                "--target",
+                "aarch64-apple-ios",
+                "--target",
+                "aarch64-linux-android",
+                "--",
+                "-D",
+                "warnings",
+            ]
+        );
     }
 
     /// A workspace apart that links a brick by path is gated when the brick changes, through

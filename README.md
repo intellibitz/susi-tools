@@ -134,20 +134,20 @@ Board, tasks and claims); the rules below are this repository's own.
     merge base with `origin/main` (all of them when no base is known or
     `rustfmt.toml` or `rust-toolchain` changed). This repository's `gates` profile leaves nested
     gates/land and `speed --cold` out of the ship wall (they stay on
-    default/accept; T-CURSOR-4). **Phase 2** (apart): Clippy for every
-    `--target` with `SUSI_CROSS_CHECK=1`, and the walks, the whole suite with
-    nextest profile `gates-walks` when the repository names one (its
-    end-to-end walks, which its `gates` profile leaves out; T-CLOUDCLAUDE-6),
-    and, for each workspace of its own inside the checkout that the change
-    touches (a folder below the root whose `Cargo.toml` has a `[workspace]`
-    table), or that depends by path on a package the change touches (its
-    path dependencies followed through the packages they name and what those
-    inherit from the root workspace, so a brick's change gates Susi Wall;
-    T-CLAUDE-454), that workspace's `cargo fmt --check`, Clippy and tests by its own
-    manifest, its files left out of the root's format check, which knows none
-    of its packages,
-    must pass, wall printed separately (cold five-triple rebuilds took
-    38–40 s; T-CURSOR-2). Each suite runs with twice the cores as test
+    default/accept; T-CURSOR-4). **Phase 2** runs Clippy for every `--target` with
+    `SUSI_CROSS_CHECK=1`. When the repository defines the nextest profile
+    `gates-walks`, this phase also runs the end-to-end walks excluded from the
+    `gates` profile (T-CLOUDCLAUDE-6). A folder below the root whose `Cargo.toml`
+    has a `[workspace]` table gets its own format check, host Clippy and tests
+    by its own manifest. The root format check leaves its files to that check.
+    A change selects the workspace when it touches the workspace directly or
+    touches one of its path dependencies, including transitive dependencies
+    and those inherited from the root workspace (T-CLAUDE-454). With `--target`,
+    Clippy also checks every member and all its targets for each requested
+    triple, offline and locked, with `SUSI_CROSS_CHECK=1` and warnings denied.
+    All phase-2 checks must pass. Their elapsed time is printed separately from
+    the 10-second line (cold five-triple rebuilds took 38–40 s, T-CURSOR-2).
+    Each suite runs with twice the cores as test
     threads and without nextest's double spawn (`NEXTEST_TEST_THREADS`,
     `NEXTEST_DOUBLE_SPAWN=0`, unless the caller sets them; T-CLOUDCLAUDE-7).
     It names each
